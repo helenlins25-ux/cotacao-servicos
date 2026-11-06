@@ -83,6 +83,12 @@ function layout(title, body, externo = false) {
     .kpi.roxo { border-top:3px solid var(--ouro); }
     a { color:#b8860b; }
     footer { text-align:center; color:var(--cinza); font-size:12px; padding:24px; }
+    /* campo de senha com botao "olhinho" */
+    .senha-wrap { position:relative; }
+    .senha-wrap input { padding-right:46px; }
+    .senha-wrap .olho { position:absolute; right:6px; top:50%; transform:translateY(-50%);
+      background:transparent; border:none; padding:6px 8px; font-size:18px; cursor:pointer; line-height:1; color:inherit; }
+    .senha-wrap .olho:hover { background:transparent; }
 
     /* ===== Responsivo para CELULAR ===== */
     @media (max-width: 640px) {
@@ -126,6 +132,13 @@ function layout(title, body, externo = false) {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('/sw.js').catch(function () {});
       });
+    }
+    // alterna visibilidade do campo de senha (olhinho)
+    function toggleSenha(btn) {
+      var input = btn.parentNode.querySelector('input');
+      if (!input) return;
+      if (input.type === 'password') { input.type = 'text'; btn.textContent = '🙈'; }
+      else { input.type = 'password'; btn.textContent = '👁️'; }
     }
   </script>
 </body>
@@ -487,8 +500,11 @@ export function paginaLogin(erro) {
           <label>E-mail</label>
           <input name="email" type="email" required autofocus placeholder="voce@empresa.com">
           <label>Senha</label>
-          <input name="senha" type="password" required placeholder="••••••••">
-          <br><br>
+          <div class="senha-wrap">
+            <input name="senha" type="password" required placeholder="••••••••">
+            <button type="button" class="olho" onclick="toggleSenha(this)" aria-label="Mostrar/ocultar senha">👁️</button>
+          </div>
+          <br>
           <button type="submit" style="width:100%">Entrar</button>
         </form>
       </div>
@@ -523,7 +539,12 @@ export function paginaUsuarios(usuarios, msg, erro) {
           <div><label>E-mail (login)</label><input name="email" type="email" required placeholder="pessoa@stractton.com.br"></div>
         </div>
         <div class="row">
-          <div><label>Senha inicial</label><input name="senha" type="text" required placeholder="defina uma senha"></div>
+          <div><label>Senha inicial</label>
+            <div class="senha-wrap">
+              <input name="senha" type="password" required placeholder="defina uma senha">
+              <button type="button" class="olho" onclick="toggleSenha(this)" aria-label="Mostrar/ocultar senha">👁️</button>
+            </div>
+          </div>
           <div><label>Perfil</label><select name="perfil" required>
             <option value="comercial">Comercial</option>
             <option value="adm">Administrador</option>
