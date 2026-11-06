@@ -16,6 +16,9 @@ if (usandoPostgres) {
   const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
+    max: 5,                       // conservador: compativel com o pooler do Supabase
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
   });
   _query = async (sql, params = []) => pool.query(sql, params);
   const host = (process.env.DATABASE_URL.match(/@([^:/]+)/) || [])[1] || '?';
