@@ -114,6 +114,14 @@ function layout(title, body, externo = false) {
   </header>
   <div class="container">${body}</div>
   <footer>Stractton Group · Sistema de Cotação de Serviços de Transporte</footer>
+  <script>
+    // registra o service worker (habilita "Instalar app" no celular)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>`;
 }

@@ -123,6 +123,17 @@ async function handler(req, res) {
   const metodo = req.method;
 
   try {
+    // ---- Service worker (na raiz, necessario para instalar como PWA) ----
+    if (metodo === 'GET' && path === '/sw.js') {
+      const swFile = join(PUBLIC_DIR, 'sw.js');
+      if (existsSync(swFile)) {
+        const dados = await readFile(swFile);
+        res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache' });
+        return res.end(dados);
+      }
+      res.writeHead(404); return res.end('not found');
+    }
+
     // ---- Manifest PWA (permite instalar como app no celular) ----
     if (metodo === 'GET' && path === '/manifest.webmanifest') {
       const manifest = {
