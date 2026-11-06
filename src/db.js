@@ -52,7 +52,32 @@ export async function inicializarBanco() {
       criado_em      TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS usuarios (
+      id         SERIAL PRIMARY KEY,
+      nome       TEXT NOT NULL,
+      email      TEXT NOT NULL UNIQUE,
+      senha_hash TEXT NOT NULL,
+      perfil     TEXT NOT NULL DEFAULT 'comercial', -- 'adm' | 'comercial'
+      criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
+
+// ---------- Usuarios (login) ----------
+export const usuarios = {
+  listar: async () => (await query('SELECT id, nome, email, perfil, criado_em FROM usuarios ORDER BY nome')).rows,
+  porEmail: async (email) => (await query('SELECT * FROM usuarios WHERE email = $1', [String(email).toLowerCase().trim()])).rows[0],
+  porId: async (id) => (await query('SELECT id, nome, email, perfil, criado_em FROM usuarios WHERE id = $1', [Number(id)])).rows[0],
+  contar: async () => Number((await query('SELECT COUNT(*)::int AS n FROM usuarios')).rows[0].n),
+  criar: async (nome, email, senha_hash, perfil) =>
+    (await query(
+      'INSERT INTO usuarios (nome, email, senha_hash, perfil) VALUES ($1,$2,$3,$4) RETURNING id, nome, email, perfil',
+      [nome, String(email).toLowerCase().trim(), senha_hash, perfil]
+    )).rows[0],
+  atualizarSenha: async (id, senha_hash) => { await query('UPDATE usuarios SET senha_hash = $2 WHERE id = $1', [Number(id), senha_hash]); },
+  excluir: async (id) => { await query('DELETE FROM usuarios WHERE id = $1', [Number(id)]); },
+};
 
 // ---------- Parceiros ----------
 export const parceiros = {
@@ -107,4 +132,4 @@ export const convites = {
     )).rows[0],
 };
 
-export default { inicializarBanco, parceiros, cotacoes, convites };
+export default { inicializarBanco, parceiros, cotacoes, convites, usuarios };

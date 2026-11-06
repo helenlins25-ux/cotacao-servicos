@@ -5,10 +5,11 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inicializarBanco, parceiros, cotacoes, convites } from './db.js';
+import { inicializarBanco, parceiros, cotacoes, convites, usuarios } from './db.js';
 import { enviarEmail, mailMode } from './mailer.js';
 import * as negocio from './negocio.js';
 import * as views from './views.js';
+import * as auth from './auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
@@ -168,6 +169,76 @@ async function handler(req, res) {
       }
       res.writeHead(404);
       return res.end('not found');
+    }
+
+    // ======== AUTENTICACAO ========
+    // Rotas publicas (sem login): link do parceiro e a propria tela de login.
+    const ehRotaParceiro = /^\/responder\//.test(path);
+    const ehLogin = (path === '/login');
+
+    // Sessao atual (se houver)
+    const sessao = auth.obterSessao(auth.lerCookie(req, 'sid'));
+    views.definirUsuarioAtual(sessao ? { nome: sessao.nome, perfil: sessao.perfil, email: sessao.email } : null);
+
+    // ---- GET /login : mostra a tela de login ----
+    if (metodo === 'GET' && ehLogin) {
+      if (sessao) return redirect(res, '/');
+      return html(res, views.paginaLogin(url.searchParams.get('erro') ? 'E-mail ou senha incorretos.' : null));
+    }
+    // ---- POST /login : autentica ----
+    if (metodo === 'POST' && ehLogin) {
+      const body = await lerBody(req);
+      const u = await usuarios.porEmail(body.email || '');
+      if (!u || !auth.verificarSenha(body.senha || '', u.senha_hash)) {
+        return redirect(res, '/login?erro=1');
+      }
+      const sid = auth.criarSessao(u);
+      res.writeHead(302, { 'Set-Cookie': auth.cookieSessao(sid), Location: '/' });
+      return res.end();
+    }
+    // ---- GET /logout ----
+    if (metodo === 'GET' && path === '/logout') {
+      auth.destruirSessao(auth.lerCookie(req, 'sid'));
+      res.writeHead(302, { 'Set-Cookie': auth.cookieLimpar(), Location: '/login' });
+      return res.end();
+    }
+
+    // Proteção: tudo que NAO for rota do parceiro exige login.
+    if (!ehRotaParceiro && !sessao) {
+      return redirect(res, '/login');
+    }
+    // So ADM acessa a area de usuarios.
+    if (path.startsWith('/usuarios') && sessao && sessao.perfil !== 'adm') {
+      return html(res, views.paginaSimples('Acesso negado', 'Apenas administradores podem gerenciar usuários. <a href="/">Voltar</a>'), 403);
+    }
+    // ======== FIM AUTENTICACAO ========
+
+    // ---- Gestao de usuarios (so ADM) ----
+    if (metodo === 'GET' && path === '/usuarios') {
+      const msg = url.searchParams.get('ok') ? 'Acesso criado com sucesso!'
+        : url.searchParams.get('removido') ? 'Acesso removido com sucesso!' : null;
+      return html(res, views.paginaUsuarios(await usuarios.listar(), msg, null));
+    }
+    if (metodo === 'POST' && path === '/usuarios') {
+      const body = await lerBody(req);
+      if (!body.nome || !body.email || !body.senha) {
+        return html(res, views.paginaUsuarios(await usuarios.listar(), null, 'Preencha nome, e-mail e senha.'), 400);
+      }
+      const perfil = body.perfil === 'adm' ? 'adm' : 'comercial';
+      if (await usuarios.porEmail(body.email)) {
+        return html(res, views.paginaUsuarios(await usuarios.listar(), null, 'Já existe um usuário com esse e-mail.'), 409);
+      }
+      await usuarios.criar(body.nome.trim(), body.email, auth.hashSenha(body.senha), perfil);
+      return redirect(res, '/usuarios?ok=1');
+    }
+    let mUserDel = path.match(/^\/usuarios\/(\d+)\/excluir$/);
+    if (metodo === 'POST' && mUserDel) {
+      const alvo = Number(mUserDel[1]);
+      if (alvo === sessao.usuarioId) {
+        return html(res, views.paginaUsuarios(await usuarios.listar(), null, 'Você não pode remover o seu próprio acesso.'), 409);
+      }
+      await usuarios.excluir(alvo);
+      return redirect(res, '/usuarios?removido=1');
     }
 
     // ---- Dashboard (home) ----
@@ -362,7 +433,21 @@ async function handler(req, res) {
 // ---- Inicializacao ----
 async function iniciar() {
   await inicializarBanco();
-  // (sem parceiros de exemplo: o cadastro e feito pela tela de Parceiros)
+
+  // Cria/garante o primeiro ADM a partir das variaveis de ambiente.
+  // ADMIN_EMAIL + ADMIN_SENHA (defina no Render). Se o usuario ja existe, nao duplica.
+  const adminEmail = process.env.ADMIN_EMAIL;
+  const adminSenha = process.env.ADMIN_SENHA;
+  if (adminEmail && adminSenha) {
+    const existente = await usuarios.porEmail(adminEmail);
+    if (!existente) {
+      await usuarios.criar(process.env.ADMIN_NOME || 'Administrador', adminEmail, auth.hashSenha(adminSenha), 'adm');
+      console.log(`[AUTH] Administrador inicial criado: ${adminEmail}`);
+    }
+  } else if ((await usuarios.contar()) === 0) {
+    console.warn('[AUTH] Nenhum usuario e nenhuma variavel ADMIN_EMAIL/ADMIN_SENHA definida. Defina-as para criar o primeiro acesso.');
+  }
+
   http.createServer(handler).listen(PORT, () => {
     console.log(`\nServidor rodando em ${BASE_URL}`);
     console.log(`Modo de e-mail: ${mailMode.toUpperCase()}${mailMode === 'mock' ? ' (simulado — links aparecem no log)' : ''}\n`);

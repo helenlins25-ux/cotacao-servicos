@@ -6,6 +6,10 @@ function logoSvg() {
 }
 
 // externo=true -> pagina vista pelo PARCEIRO (sem menu interno de navegacao).
+// usuario = { nome, perfil } do logado (para mostrar menu Usuarios so ao ADM e botao Sair).
+let _usuarioAtual = null;
+export function definirUsuarioAtual(u) { _usuarioAtual = u; }
+
 function layout(title, body, externo = false) {
   return `<!DOCTYPE html>
 <html lang="pt-br">
@@ -110,6 +114,8 @@ function layout(title, body, externo = false) {
       <a href="/cotacoes">Cotações</a>
       <a href="/cotacoes/nova">Nova cotação</a>
       <a href="/parceiros">Parceiros</a>
+      ${_usuarioAtual && _usuarioAtual.perfil === 'adm' ? '<a href="/usuarios">Usuários</a>' : ''}
+      ${_usuarioAtual ? `<a href="/logout" style="margin-left:auto;background:rgba(255,255,255,.08)">Sair (${_usuarioAtual.nome.split(' ')[0]})</a>` : ''}
     </nav>`}
   </header>
   <div class="container">${body}</div>
@@ -466,4 +472,73 @@ export function paginaRespostaParceiro(c, convite, expirada) {
 
 export function paginaSimples(titulo, html, externo = false) {
   return layout(titulo, `<div class="card">${html}</div>`, externo);
+}
+
+// ---------------- LOGIN ----------------
+export function paginaLogin(erro) {
+  // pagina "externa" (sem menu interno), centralizada
+  return layout('Entrar', `
+    <div style="max-width:420px;margin:40px auto">
+      <div class="card">
+        <h1 style="margin-top:0">Acesso ao sistema</h1>
+        <p class="muted">Entre com seu e-mail e senha para acessar o painel.</p>
+        ${erro ? `<div class="warn">${erro}</div><br>` : ''}
+        <form method="post" action="/login">
+          <label>E-mail</label>
+          <input name="email" type="email" required autofocus placeholder="voce@empresa.com">
+          <label>Senha</label>
+          <input name="senha" type="password" required placeholder="••••••••">
+          <br><br>
+          <button type="submit" style="width:100%">Entrar</button>
+        </form>
+      </div>
+    </div>
+  `, true);
+}
+
+// ---------------- USUARIOS (so ADM) ----------------
+export function paginaUsuarios(usuarios, msg, erro) {
+  const linhas = usuarios.map(u => `
+    <tr>
+      <td>${u.nome}</td>
+      <td>${u.email}</td>
+      <td><span class="tag ${u.perfil === 'adm' ? 'fechada' : 'aberta'}">${u.perfil === 'adm' ? 'Administrador' : 'Comercial'}</span></td>
+      <td style="text-align:right">
+        <form method="post" action="/usuarios/${u.id}/excluir" style="margin:0"
+              onsubmit="return confirm('Remover o acesso de ${String(u.nome).replace(/'/g, "\\'")}?');">
+          <button type="submit" style="background:#fff;color:#b91c1c;border-color:#fca5a5;padding:5px 12px;font-size:13px">🗑️ Remover</button>
+        </form>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="muted">Nenhum usuário cadastrado.</td></tr>';
+
+  return layout('Usuários', `
+    <h1>Usuários e acessos</h1>
+    ${msg ? `<div class="ok">${msg}</div><br>` : ''}
+    ${erro ? `<div class="warn">${erro}</div><br>` : ''}
+    <div class="card">
+      <h2>Cadastrar novo acesso</h2>
+      <form method="post" action="/usuarios">
+        <div class="row">
+          <div><label>Nome</label><input name="nome" required placeholder="Nome da pessoa"></div>
+          <div><label>E-mail (login)</label><input name="email" type="email" required placeholder="pessoa@stractton.com.br"></div>
+        </div>
+        <div class="row">
+          <div><label>Senha inicial</label><input name="senha" type="text" required placeholder="defina uma senha"></div>
+          <div><label>Perfil</label><select name="perfil" required>
+            <option value="comercial">Comercial</option>
+            <option value="adm">Administrador</option>
+          </select></div>
+        </div>
+        <br><button type="submit">Criar acesso</button>
+      </form>
+      <p class="muted">O Administrador pode gerenciar usuários. O Comercial usa o sistema mas não cria/remove acessos.</p>
+    </div>
+    <div class="card">
+      <h2>Acessos cadastrados</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th></th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table></div>
+    </div>
+  `);
 }
