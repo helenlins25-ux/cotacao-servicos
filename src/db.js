@@ -52,6 +52,10 @@ export const parceiros = {
   contar: async () => Number((await query('SELECT COUNT(*)::int AS n FROM parceiros')).rows[0].n),
   criar: async (nome, email) =>
     (await query('INSERT INTO parceiros (nome, email) VALUES ($1, $2) RETURNING *', [nome, email])).rows[0],
+  excluir: async (id) => { await query('DELETE FROM parceiros WHERE id = $1', [Number(id)]); },
+  // quantas cotacoes/convites este parceiro ja participou (para alertar antes de excluir)
+  usos: async (id) =>
+    Number((await query('SELECT COUNT(*)::int AS n FROM convites WHERE parceiro_id = $1', [Number(id)])).rows[0].n),
 };
 
 // ---------- Cotacoes ----------

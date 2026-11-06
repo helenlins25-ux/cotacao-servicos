@@ -89,13 +89,29 @@ async function handler(req, res) {
 
     // ---- Parceiros ----
     if (metodo === 'GET' && path === '/parceiros') {
-      return html(res, views.paginaParceiros(await parceiros.listar(), url.searchParams.get('ok') ? 'Parceiro cadastrado com sucesso!' : null));
+      const msg = url.searchParams.get('ok') ? 'Parceiro cadastrado com sucesso!'
+        : url.searchParams.get('excluido') ? 'Parceiro excluído com sucesso!' : null;
+      return html(res, views.paginaParceiros(await parceiros.listar(), msg));
     }
     if (metodo === 'POST' && path === '/parceiros') {
       const body = await lerBody(req);
       if (!body.nome || !body.email) return html(res, views.paginaSimples('Erro', 'Nome e e-mail são obrigatórios.'), 400);
       await parceiros.criar(body.nome.trim(), body.email.trim());
       return redirect(res, '/parceiros?ok=1');
+    }
+
+    // ---- Excluir parceiro ----
+    let mDel = path.match(/^\/parceiros\/(\d+)\/excluir$/);
+    if (metodo === 'POST' && mDel) {
+      const id = mDel[1];
+      const usos = await parceiros.usos(id);
+      if (usos > 0) {
+        // parceiro ja participou de cotacoes: nao excluir (manteria historico/faturamento)
+        return html(res, views.paginaSimples('Não é possível excluir',
+          `Este parceiro já participou de ${usos} cotação(ões) e não pode ser excluído, para preservar o histórico e os indicadores. <a href="/parceiros">Voltar</a>`), 409);
+      }
+      await parceiros.excluir(id);
+      return redirect(res, '/parceiros?excluido=1');
     }
 
     // ---- Nova cotacao (form) ----
@@ -225,12 +241,7 @@ async function handler(req, res) {
 // ---- Inicializacao ----
 async function iniciar() {
   await inicializarBanco();
-  if ((await parceiros.contar()) === 0) {
-    await parceiros.criar('Transportadora Alfa', 'alfa@exemplo.com');
-    await parceiros.criar('Rodoviário Beta', 'beta@exemplo.com');
-    await parceiros.criar('Logística Gama', 'gama@exemplo.com');
-    console.log('Parceiros de exemplo criados (Alfa, Beta, Gama).');
-  }
+  // (sem parceiros de exemplo: o cadastro e feito pela tela de Parceiros)
   http.createServer(handler).listen(PORT, () => {
     console.log(`\nServidor rodando em ${BASE_URL}`);
     console.log(`Modo de e-mail: ${mailMode.toUpperCase()}${mailMode === 'mock' ? ' (simulado — links aparecem no log)' : ''}\n`);

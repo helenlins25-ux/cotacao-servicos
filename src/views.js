@@ -160,7 +160,13 @@ export function paginaParceiros(parceiros, msg) {
       <td>${p.nome}</td>
       <td>${p.email}</td>
       <td class="muted">${fmtData(p.criado_em)}</td>
-    </tr>`).join('') || '<tr><td colspan="3" class="muted">Nenhum parceiro cadastrado.</td></tr>';
+      <td style="text-align:right">
+        <form method="post" action="/parceiros/${p.id}/excluir" style="margin:0"
+              onsubmit="return confirm('Excluir o parceiro ${String(p.nome).replace(/'/g, "\\'")}?');">
+          <button type="submit" style="background:#fff;color:#b91c1c;border-color:#fca5a5;padding:5px 12px;font-size:13px">🗑️ Excluir</button>
+        </form>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="muted">Nenhum parceiro cadastrado.</td></tr>';
 
   return layout('Parceiros', `
     <h1>Parceiros</h1>
@@ -178,7 +184,7 @@ export function paginaParceiros(parceiros, msg) {
     <div class="card">
       <h2>Lista de parceiros</h2>
       <table>
-        <thead><tr><th>Nome</th><th>E-mail</th><th>Cadastrado em</th></tr></thead>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Cadastrado em</th><th></th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
     </div>
