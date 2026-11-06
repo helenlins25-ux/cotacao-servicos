@@ -14,7 +14,7 @@ function layout(title, body) {
     header { background:#0f172a; color:#fff; padding:16px 24px; }
     header a { color:#cbd5e1; text-decoration:none; margin-right:16px; font-size:14px; }
     header a:hover { color:#fff; }
-    .container { max-width:960px; margin:24px auto; padding:0 16px; }
+    .container { max-width:1000px; margin:24px auto; padding:0 16px; }
     h1 { font-size:22px; } h2 { font-size:18px; }
     .card { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:20px; margin-bottom:20px; }
     label { display:block; font-size:13px; font-weight:600; margin:12px 0 4px; }
@@ -28,21 +28,32 @@ function layout(title, body) {
     th, td { text-align:left; padding:10px; border-bottom:1px solid var(--borda); }
     th { color:var(--cinza); font-size:12px; text-transform:uppercase; }
     .tag { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600; }
-    .tag.aberta { background:#dcfce7; color:#166534; }
-    .tag.encerrada { background:#fee2e2; color:#991b1b; }
+    .tag.aberta { background:#dbeafe; color:#1e40af; }
+    .tag.em_andamento { background:#fef3c7; color:#92400e; }
+    .tag.fechada { background:#dcfce7; color:#166534; }
+    .tag.encerrada_sem_proposta { background:#fee2e2; color:#991b1b; }
     .muted { color:var(--cinza); font-size:13px; }
     .check { display:flex; align-items:center; gap:8px; margin:6px 0; }
     .check input { width:auto; }
     .ok { background:#dcfce7; color:#166534; padding:14px; border-radius:8px; }
     .warn { background:#fef3c7; color:#92400e; padding:14px; border-radius:8px; }
     .big { font-size:20px; font-weight:700; }
+    .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+    .kpi { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:16px; }
+    .kpi .n { font-size:26px; font-weight:800; }
+    .kpi .l { font-size:12px; color:var(--cinza); text-transform:uppercase; letter-spacing:.03em; }
+    .kpi.azul { border-top:3px solid #3b82f6; }
+    .kpi.amar { border-top:3px solid #f59e0b; }
+    .kpi.verd { border-top:3px solid #22c55e; }
+    .kpi.roxo { border-top:3px solid #8b5cf6; }
   </style>
 </head>
 <body>
   <header>
     <strong>📦 Cotação de Serviços</strong>
     &nbsp;&nbsp;
-    <a href="/">Cotações</a>
+    <a href="/">Dashboard</a>
+    <a href="/cotacoes">Cotações</a>
     <a href="/cotacoes/nova">Nova cotação</a>
     <a href="/parceiros">Parceiros</a>
   </header>
@@ -51,13 +62,75 @@ function layout(title, body) {
 </html>`;
 }
 
-const fmtMoeda = (v) => Number(v).toLocaleString('pt-br', { style: 'currency', currency: 'BRL' });
+const fmtMoeda = (v) => Number(v || 0).toLocaleString('pt-br', { style: 'currency', currency: 'BRL' });
 const fmtData = (iso) => {
   if (!iso) return '-';
-  const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  const s = typeof iso === 'string' ? iso : new Date(iso).toISOString();
+  const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
   return d.toLocaleString('pt-br', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
+const rotuloStatus = {
+  aberta: 'Aberta',
+  em_andamento: 'Em andamento',
+  fechada: 'Fechada',
+  encerrada_sem_proposta: 'Encerrada (sem proposta)',
+};
 
+// ---------------- DASHBOARD ----------------
+export function paginaDashboard(d) {
+  const tempoMedio = d.qtdRespostas
+    ? (d.tempoMedioHoras < 1
+        ? `${Math.round(d.tempoMedioHoras * 60)} min`
+        : `${d.tempoMedioHoras.toFixed(1)} h`)
+    : '—';
+
+  const linhasComercial = Object.entries(d.porComercial).map(([nome, m]) => `
+    <tr>
+      <td><strong>${nome}</strong></td>
+      <td>${m.total}</td>
+      <td>${m.fechadas}</td>
+      <td>${fmtMoeda(m.faturamento)}</td>
+    </tr>`).join('');
+
+  return layout('Dashboard', `
+    <h1>📊 Dashboard de Indicadores</h1>
+
+    <div class="kpis">
+      <div class="kpi azul"><div class="n">${d.contagem.aberta || 0}</div><div class="l">Abertas</div></div>
+      <div class="kpi amar"><div class="n">${d.contagem.em_andamento || 0}</div><div class="l">Em andamento</div></div>
+      <div class="kpi verd"><div class="n">${d.contagem.fechada || 0}</div><div class="l">Fechadas</div></div>
+      <div class="kpi roxo"><div class="n">${fmtMoeda(d.faturamentoTotal)}</div><div class="l">Faturamento total</div></div>
+    </div>
+    <br>
+    <div class="row">
+      <div class="card">
+        <div class="l muted">TEMPO MÉDIO DE RESPOSTA</div>
+        <div class="big">${tempoMedio}</div>
+        <div class="muted">${d.qtdRespostas} resposta(s) de parceiros</div>
+      </div>
+      <div class="card">
+        <div class="l muted">PARCEIRO COM MAIS FECHAMENTOS</div>
+        <div class="big">${d.parceiroTop ? d.parceiroTop.nome : '—'}</div>
+        <div class="muted">${d.parceiroTop ? d.parceiroTop.fechamentos + ' fechamento(s)' : 'nenhum fechamento ainda'}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Desempenho por comercial</h2>
+      <table>
+        <thead><tr><th>Comercial</th><th>Cotações</th><th>Fechadas</th><th>Faturamento</th></tr></thead>
+        <tbody>${linhasComercial}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <a class="btn" href="/cotacoes/nova">+ Nova cotação</a>
+      &nbsp;<a class="btn" style="background:#475569" href="/cotacoes">Ver todas as cotações</a>
+    </div>
+  `);
+}
+
+// ---------------- PARCEIROS ----------------
 export function paginaParceiros(parceiros, msg) {
   const linhas = parceiros.map(p => `
     <tr>
@@ -89,13 +162,15 @@ export function paginaParceiros(parceiros, msg) {
   `);
 }
 
-export function paginaNovaCotacao(parceiros) {
+// ---------------- NOVA COTACAO ----------------
+export function paginaNovaCotacao(parceiros, comerciais) {
   const checks = parceiros.map(p => `
     <label class="check"><input type="checkbox" name="parceiros" value="${p.id}"> ${p.nome} <span class="muted">(${p.email})</span></label>
   `).join('') || '<p class="muted">Nenhum parceiro cadastrado. <a href="/parceiros">Cadastre um parceiro</a> antes de criar a cotação.</p>';
 
   const veiculos = ['Fiorino', 'VUC', 'Van', 'Caminhão 3/4', 'Caminhão Toco', 'Caminhão Truck', 'Carreta', 'Bitrem'];
-  const opts = veiculos.map(v => `<option value="${v}">${v}</option>`).join('');
+  const optsVeic = veiculos.map(v => `<option value="${v}">${v}</option>`).join('');
+  const optsCom = comerciais.map(c => `<option value="${c}">${c}</option>`).join('');
 
   return layout('Nova cotação', `
     <h1>Nova cotação</h1>
@@ -110,8 +185,12 @@ export function paginaNovaCotacao(parceiros) {
           <div><label>Valor da mercadoria (R$)</label><input name="valor_mercadoria" type="number" step="0.01" min="0" required placeholder="50000"></div>
         </div>
         <div class="row">
-          <div><label>Tipo de veículo</label><select name="tipo_veiculo" required>${opts}</select></div>
+          <div><label>Tipo de veículo</label><select name="tipo_veiculo" required>${optsVeic}</select></div>
+          <div><label>Comercial responsável</label><select name="comercial" required><option value="">Selecione...</option>${optsCom}</select></div>
+        </div>
+        <div class="row">
           <div><label>Prazo para resposta</label><input name="prazo_resposta" type="datetime-local" required></div>
+          <div></div>
         </div>
         <label>Observações (opcional)</label>
         <textarea name="observacoes" placeholder="Informações adicionais para os parceiros..."></textarea>
@@ -123,16 +202,18 @@ export function paginaNovaCotacao(parceiros) {
   `);
 }
 
+// ---------------- LISTA DE COTACOES ----------------
 export function paginaListaCotacoes(cotacoes) {
   const linhas = cotacoes.map(c => `
     <tr>
       <td><a href="/cotacoes/${c.id}">#${c.id}</a></td>
       <td>${c.origem} → ${c.destino}</td>
-      <td>${c.tipo_veiculo}</td>
+      <td>${c.comercial || '—'}</td>
       <td>${c.respondidas}/${c.convidados}</td>
       <td>${fmtData(c.prazo_resposta)}</td>
-      <td><span class="tag ${c.status}">${c.status}</span></td>
-    </tr>`).join('') || '<tr><td colspan="6" class="muted">Nenhuma cotação criada ainda.</td></tr>';
+      <td><span class="tag ${c.status}">${rotuloStatus[c.status] || c.status}</span></td>
+      <td>${c.status === 'fechada' ? fmtMoeda(c.faturamento) : '<span class="muted">—</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">Nenhuma cotação criada ainda.</td></tr>';
 
   return layout('Cotações', `
     <h1>Cotações</h1>
@@ -140,33 +221,62 @@ export function paginaListaCotacoes(cotacoes) {
       <a class="btn" href="/cotacoes/nova">+ Nova cotação</a>
       <br><br>
       <table>
-        <thead><tr><th>#</th><th>Trajeto</th><th>Veículo</th><th>Respostas</th><th>Prazo</th><th>Status</th></tr></thead>
+        <thead><tr><th>#</th><th>Trajeto</th><th>Comercial</th><th>Respostas</th><th>Prazo</th><th>Status</th><th>Faturamento</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
     </div>
   `);
 }
 
-export function paginaDetalheCotacao(c, convites, expirada) {
-  const linhas = convites.map(v => `
-    <tr>
-      <td>${v.nome}<br><span class="muted">${v.email}</span></td>
+// ---------------- DETALHE (INTERNO) ----------------
+export function paginaDetalheCotacao(c, convites, info) {
+  const { status, faturamento, vencedorNome, percFixo } = info;
+
+  const linhas = convites.map(v => {
+    const ehVencedor = c.parceiro_vencedor && v.parceiro_id === c.parceiro_vencedor;
+    return `
+    <tr${ehVencedor ? ' style="background:#f0fdf4"' : ''}>
+      <td>${v.nome} ${ehVencedor ? '🏆' : ''}<br><span class="muted">${v.email}</span></td>
       <td>${v.respondido_em ? fmtMoeda(v.valor_cotado) : '<span class="muted">—</span>'}</td>
       <td>${v.prazo_entrega || '<span class="muted">—</span>'}</td>
       <td>${v.comentario || '<span class="muted">—</span>'}</td>
       <td>${v.respondido_em ? '✅ ' + fmtData(v.respondido_em) : '<span class="muted">aguardando</span>'}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
-  const menor = convites
-    .filter(v => v.respondido_em && v.valor_cotado != null)
-    .sort((a, b) => a.valor_cotado - b.valor_cotado)[0];
+  // bloco de fechamento/faturamento (INTERNO - nunca exibido ao parceiro)
+  let blocoFechamento = '';
+  if (status === 'fechada') {
+    const fixo = Number(c.valor_fechado || 0) * percFixo;
+    blocoFechamento = `
+    <div class="card">
+      <h2>💰 Fechamento (interno)</h2>
+      <div class="row">
+        <div><label>Vencedor (menor valor)</label>🏆 ${vencedorNome || '—'}</div>
+        <div><label>Valor do frete fechado</label>${fmtMoeda(c.valor_fechado)}</div>
+      </div>
+      <div class="row">
+        <div><label>Taxa fixa (2%)</label>${fmtMoeda(fixo)}</div>
+        <div><label>Comissão variável</label>${fmtMoeda(c.comissao_variavel)}</div>
+        <div><label>Faturamento total</label><span class="big">${fmtMoeda(faturamento)}</span></div>
+      </div>
+      <form method="post" action="/cotacoes/${c.id}/comissao">
+        <label>Atualizar comissão variável (R$)</label>
+        <div class="row">
+          <div><input name="comissao_variavel" type="number" step="0.01" min="0" value="${Number(c.comissao_variavel || 0)}"></div>
+          <div style="flex:0"><br><button type="submit">Salvar comissão</button></div>
+        </div>
+      </form>
+    </div>`;
+  }
 
   return layout(`Cotação #${c.id}`, `
-    <h1>Cotação #${c.id} <span class="tag ${expirada ? 'encerrada' : c.status}">${expirada ? 'encerrada' : c.status}</span></h1>
+    <h1>Cotação #${c.id} <span class="tag ${status}">${rotuloStatus[status] || status}</span></h1>
     <div class="card">
       <div class="row">
         <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
         <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
+        <div><label>Comercial responsável</label>${c.comercial || '—'}</div>
       </div>
       <div class="row">
         <div><label>Peso da carga</label>${c.peso_kg} kg</div>
@@ -175,7 +285,7 @@ export function paginaDetalheCotacao(c, convites, expirada) {
       </div>
       ${c.observacoes ? `<label>Observações</label><div class="muted">${c.observacoes}</div>` : ''}
     </div>
-    ${menor ? `<div class="card"><label>Melhor proposta até agora</label><span class="big">${fmtMoeda(menor.valor_cotado)}</span> — ${menor.nome}</div>` : ''}
+    ${blocoFechamento}
     <div class="card">
       <h2>Respostas dos parceiros</h2>
       <table>
@@ -186,6 +296,8 @@ export function paginaDetalheCotacao(c, convites, expirada) {
   `);
 }
 
+// ---------------- RESPOSTA DO PARCEIRO (EXTERNO) ----------------
+// NUNCA exibir faturamento, comissao, vencedor ou valores de outros parceiros.
 export function paginaRespostaParceiro(c, convite, expirada) {
   const cabecalho = `
     <div class="card">

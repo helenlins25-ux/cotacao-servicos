@@ -1,31 +1,43 @@
 # 📦 App de Cotação de Serviços de Transporte
 
-Aplicação para solicitar cotações de frete a parceiros (transportadoras). O usuário interno
-cria uma cotação, o sistema **dispara e-mails** para os parceiros selecionados, e cada parceiro
-responde a proposta clicando num **link exclusivo**. Há um **prazo limite** e, após ele,
-**novas respostas são bloqueadas**.
+Sistema para solicitar cotações de frete a parceiros (transportadoras). O comercial cria uma
+cotação, o sistema **dispara e-mails** aos parceiros, cada parceiro responde a proposta por um
+**link exclusivo**, e ao fim do prazo a cotação **fecha automaticamente pelo menor valor**.
+Inclui **dashboard de indicadores** e controle de **faturamento** interno.
 
-> Feito com **zero dependências externas** — usa apenas a biblioteca padrão do Node.js
-> (incluindo o **SQLite embutido** do Node 22+). Não precisa de `npm install`.
+- **App (backend):** Node.js — hospedado no **Render**
+- **Banco de dados:** **PostgreSQL (Supabase)** — dados permanentes 🇧🇷
 
 ---
 
 ## ✨ Funcionalidades
 
-- **Formulário de cotação** com os campos solicitados:
-  - Origem → Destino
-  - Peso da carga (kg)
-  - Valor da mercadoria (R$)
-  - Tipo de veículo (Fiorino, VUC, Van, 3/4, Toco, Truck, Carreta, Bitrem)
-  - Observações (opcional)
-  - **Prazo para resposta** (data/hora limite)
-- **Disparo de e-mail** para os parceiros selecionados, cada um com um link único.
-- **Página de resposta do parceiro**: valor do frete, prazo de entrega e comentário.
-- **Bloqueio por prazo**: após o prazo, o parceiro vê "prazo encerrado" e o servidor
-  **rejeita qualquer tentativa de envio** (HTTP 403) — nada é salvo.
-- **Painel de respostas** que destaca a **melhor (menor) proposta**.
-- **Cadastro de parceiros** (nome + e-mail). Já vem com 3 de exemplo no primeiro uso.
-- **Dados persistentes** em SQLite — sobrevivem a reinícios.
+**Cotação**
+- Campos: Origem → Destino, Peso, Valor da mercadoria, Tipo de veículo, Observações, Prazo
+- 🆕 **Comercial responsável** (Carlos / Everton / Tiago)
+- Disparo de e-mail aos parceiros selecionados, cada um com link único
+
+**Resposta do parceiro** (via link, sem login)
+- Informa valor do frete, prazo de entrega e comentário
+- Após o prazo, respostas são **bloqueadas** (o parceiro vê "prazo encerrado")
+- 🔒 O parceiro **nunca** vê faturamento, comissão, vencedor ou valores de outros parceiros
+
+**Status automáticos**
+| Status | Quando |
+|--------|--------|
+| 🔵 **Aberta** | Dentro do prazo, sem respostas |
+| 🟡 **Em andamento** | Dentro do prazo, com ≥1 proposta |
+| 🟢 **Fechada** | Prazo encerrado → vence **automaticamente o menor valor** |
+
+**Faturamento** (interno)
+- **2% fixo** sobre o valor do frete vencedor + **comissão variável** (editável no fechamento)
+
+**Dashboard de indicadores**
+- Contadores: abertas / em andamento / fechadas
+- **Faturamento total**
+- **Tempo médio de resposta** dos parceiros
+- **Parceiro com mais fechamentos**
+- **Desempenho por comercial** (cotações, fechamentos e faturamento de Carlos/Everton/Tiago)
 
 ---
 
@@ -33,57 +45,41 @@ responde a proposta clicando num **link exclusivo**. Há um **prazo limite** e, 
 
 Requer **Node.js 22+**.
 
+**Com banco Supabase (produção):**
 ```bash
+export DATABASE_URL="postgresql://postgres:SENHA@db.xxxxx.supabase.co:5432/postgres"
+npm install
 npm start
-# equivale a: node --experimental-sqlite src/server.js
 ```
 
+**Modo de teste sem internet (SQLite local):**
+```bash
+DB_ENGINE=sqlite npm start
+```
 Abra: **http://localhost:3000**
 
-> O aviso `ExperimentalWarning: SQLite is an experimental feature` é normal e inofensivo.
+> O app usa uma camada de banco que funciona com **PostgreSQL (Supabase)** em produção e com
+> **SQLite embutido** localmente — a lógica de negócio é idêntica nos dois.
 
 ---
 
-## 🚀 Publicar online (deploy no Render) — grátis
+## 🚀 Deploy (Render + Supabase)
 
-O projeto já vem com `render.yaml` configurado.
+1. Crie um projeto no **Supabase** (região São Paulo) e pegue a *connection string* (URI).
+2. No **Render**: New → **Blueprint** → selecione este repositório → **Apply**.
+3. Em **Environment**, defina a variável **`DATABASE_URL`** com a string do Supabase.
+4. O deploy roda `npm install` (instala o driver `pg`) e sobe o app.
+5. Acesse a URL pública gerada (ex: `https://cotacao-servicos.onrender.com`).
 
-> ⚠️ **Sobre persistência dos dados:** o **plano gratuito do Render não permite disco
-> persistente**. No plano free, os dados do SQLite são **temporários** — reiniciam a cada
-> deploy ou quando o serviço hiberna. Para dados permanentes, use um plano pago do Render
-> (com disco) ou conecte um banco externo. Para apenas **demonstrar/testar** o fluxo, o free
-> funciona bem.
-
-1. Suba este repositório no **GitHub** (já feito, se você está lendo isto lá).
-2. Crie uma conta grátis em **https://render.com** (pode entrar com o GitHub).
-3. No painel do Render: **New +** → **Blueprint** → conecte sua conta GitHub e selecione este repositório.
-4. O Render lê o `render.yaml` automaticamente e cria o serviço. Clique em **Apply**.
-5. Aguarde o build/deploy. Ao final, você recebe uma URL pública, ex:
-   **`https://cotacao-servicos.onrender.com`**
-6. Pronto! Acesse essa URL no navegador.
-
-> **Plano grátis:** o serviço "hiberna" após ~15 min sem uso e acorda na próxima visita
-> (a primeira abertura pode levar ~30s). No plano free os dados são temporários (ver aviso acima).
+> As tabelas são criadas automaticamente na primeira execução.
 
 ---
 
-## ✉️ Ativar envio de e-mail REAL
+## ✉️ Ativar e-mail real
 
-Por padrão roda em **modo simulado** (`MAIL_MODE=mock`): os e-mails aparecem no log do serviço,
-com o link de resposta. Para enviar de verdade, configure as variáveis de ambiente no Render
-(aba **Environment** do serviço):
-
-```
-MAIL_MODE=smtp
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=seu-email@gmail.com
-SMTP_PASS=sua-senha-de-app        # no Gmail, gere uma "Senha de app"
-MAIL_FROM=Cotações <seu-email@gmail.com>
-```
-
-Os links nos e-mails usam automaticamente a URL pública do serviço.
+Por padrão roda em **modo simulado** (`MAIL_MODE=mock`): os links aparecem no log. Para enviar
+de verdade, defina no Render: `MAIL_MODE=smtp` e as variáveis `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`.
 
 ---
 
@@ -91,18 +87,18 @@ Os links nos e-mails usam automaticamente a URL pública do serviço.
 
 ```
 src/
-  server.js    # servidor HTTP + rotas (lib padrão, sem express)
-  db.js        # banco SQLite embutido (node:sqlite)
-  mailer.js    # envio de e-mail: modo mock ou SMTP nativo
-  views.js     # geração das páginas HTML
-render.yaml    # configuração de deploy (Render)
+  server.js            # servidor HTTP + rotas
+  db.js                # camada de dados (consultas)
+  database-adapter.js  # adaptador: PostgreSQL (prod) ou SQLite (teste)
+  negocio.js           # regras: status, fechamento, faturamento, dashboard
+  mailer.js            # envio de e-mail (mock ou SMTP)
+  views.js             # páginas HTML
+render.yaml            # configuração de deploy
 ```
 
-Variáveis de ambiente úteis:
-
-| Variável    | Default                 | Descrição                                   |
-|-------------|-------------------------|---------------------------------------------|
-| `PORT`      | `3000`                  | Porta do servidor (o Render define sozinho) |
-| `DATA_DIR`  | `./data`                | Pasta do arquivo SQLite (use disco em plano pago) |
-| `BASE_URL`  | detectado da requisição | URL pública usada nos links dos e-mails     |
-| `MAIL_MODE` | `mock`                  | `mock` (simulado) ou `smtp` (envio real)    |
+| Variável      | Descrição |
+|---------------|-----------|
+| `DATABASE_URL`| String de conexão do Supabase (PostgreSQL) |
+| `DB_ENGINE`   | `sqlite` força o modo de teste local |
+| `MAIL_MODE`   | `mock` (simulado) ou `smtp` (envio real) |
+| `BASE_URL`    | URL pública (detectada automaticamente se omitida) |

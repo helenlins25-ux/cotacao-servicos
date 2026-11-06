@@ -1,25 +1,24 @@
 # Configuracao de deploy para o Render (https://render.com)
-# Basta conectar o repositorio no Render que ele le este arquivo automaticamente.
+# Conecte o repositorio no Render (Blueprint) que ele le este arquivo.
 services:
   - type: web
     name: cotacao-servicos
     runtime: node
     plan: free
-    buildCommand: "" # sem dependencias externas, nada a instalar
+    buildCommand: "npm install"   # instala a dependencia 'pg' (driver PostgreSQL)
     startCommand: "node --experimental-sqlite src/server.js"
-
-    # OBS: o plano "free" do Render nao permite disco persistente.
-    # Assim, os dados do SQLite sao temporarios (reiniciam a cada deploy/hibernacao).
-    # Para dados permanentes, use um plano pago com disco OU um banco externo (ver README).
 
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Conexao com o banco Supabase (PostgreSQL). DEFINA no painel do Render
+      # (Environment) com a string do seu projeto Supabase. NAO versionar no git.
+      - key: DATABASE_URL
+        sync: false
       # Modo de e-mail: comeca simulado; troque para "smtp" quando tiver credenciais.
       - key: MAIL_MODE
         value: mock
-      # URL publica do app (o Render preenche o host automaticamente nos links,
-      # mas voce pode fixar aqui depois do 1o deploy, ex: https://seu-app.onrender.com)
+      # URL publica (o app detecta sozinho; pode fixar apos o 1o deploy)
       - key: BASE_URL
         sync: false
       # Preencha quando ativar o envio real (MAIL_MODE=smtp):

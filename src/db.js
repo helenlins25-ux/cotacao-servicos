@@ -1,94 +1,94 @@
-// Camada de dados usando o SQLite EMBUTIDO do Node.js 22+ (node:sqlite).
-// Zero dependencias externas. Os dados ficam em um arquivo .db que, em
-// producao (Render), mora em um disco persistente -> sobrevive a reinicios.
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+// Camada de dados. Usa o adaptador (Postgres em producao, SQLite nos testes).
+// Todas as funcoes sao assincronas e retornam Promises.
+import { query } from './database-adapter.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// DATA_DIR permite apontar para o disco persistente do Render (ex: /var/data).
-// Em desenvolvimento, usa a pasta ./data do projeto.
-const dataDir = process.env.DATA_DIR || join(__dirname, '..', 'data');
-mkdirSync(dataDir, { recursive: true });
-
-const db = new DatabaseSync(join(dataDir, 'cotacoes.db'));
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA foreign_keys = ON');
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS parceiros (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome      TEXT NOT NULL,
-    email     TEXT NOT NULL,
-    criado_em TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS cotacoes (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    origem           TEXT NOT NULL,
-    destino          TEXT NOT NULL,
-    peso_kg          REAL NOT NULL,
-    valor_mercadoria REAL NOT NULL,
-    tipo_veiculo     TEXT NOT NULL,
-    observacoes      TEXT,
-    prazo_resposta   TEXT NOT NULL,
-    status           TEXT NOT NULL DEFAULT 'aberta',
-    criado_em        TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS convites (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    cotacao_id    INTEGER NOT NULL REFERENCES cotacoes(id) ON DELETE CASCADE,
-    parceiro_id   INTEGER NOT NULL REFERENCES parceiros(id) ON DELETE CASCADE,
-    token         TEXT NOT NULL UNIQUE,
-    valor_cotado  REAL,
-    prazo_entrega TEXT,
-    comentario    TEXT,
-    respondido_em TEXT,
-    criado_em     TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-`);
+// ---------- Criacao das tabelas (idempotente) ----------
+export async function inicializarBanco() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS parceiros (
+      id         SERIAL PRIMARY KEY,
+      nome       TEXT NOT NULL,
+      email      TEXT NOT NULL,
+      criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS cotacoes (
+      id                 SERIAL PRIMARY KEY,
+      origem             TEXT NOT NULL,
+      destino            TEXT NOT NULL,
+      peso_kg            NUMERIC NOT NULL,
+      valor_mercadoria   NUMERIC NOT NULL,
+      tipo_veiculo       TEXT NOT NULL,
+      comercial          TEXT NOT NULL,
+      observacoes        TEXT,
+      prazo_resposta     TIMESTAMPTZ NOT NULL,
+      parceiro_vencedor  INTEGER REFERENCES parceiros(id),
+      valor_fechado      NUMERIC,
+      comissao_variavel  NUMERIC DEFAULT 0,
+      fechado_em         TIMESTAMPTZ,
+      criado_em          TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS convites (
+      id             SERIAL PRIMARY KEY,
+      cotacao_id     INTEGER NOT NULL REFERENCES cotacoes(id) ON DELETE CASCADE,
+      parceiro_id    INTEGER NOT NULL REFERENCES parceiros(id) ON DELETE CASCADE,
+      token          TEXT NOT NULL UNIQUE,
+      valor_cotado   NUMERIC,
+      prazo_entrega  TEXT,
+      comentario     TEXT,
+      respondido_em  TIMESTAMPTZ,
+      criado_em      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+}
 
 // ---------- Parceiros ----------
 export const parceiros = {
-  listar: () => db.prepare('SELECT * FROM parceiros ORDER BY nome').all(),
-  obter: (id) => db.prepare('SELECT * FROM parceiros WHERE id = ?').get(Number(id)),
-  contar: () => db.prepare('SELECT COUNT(*) AS n FROM parceiros').get().n,
-  criar: (nome, email) => {
-    const info = db.prepare('INSERT INTO parceiros (nome, email) VALUES (?, ?)').run(nome, email);
-    return { id: Number(info.lastInsertRowid), nome, email };
-  },
+  listar: async () => (await query('SELECT * FROM parceiros ORDER BY nome')).rows,
+  obter: async (id) => (await query('SELECT * FROM parceiros WHERE id = $1', [Number(id)])).rows[0],
+  contar: async () => Number((await query('SELECT COUNT(*)::int AS n FROM parceiros')).rows[0].n),
+  criar: async (nome, email) =>
+    (await query('INSERT INTO parceiros (nome, email) VALUES ($1, $2) RETURNING *', [nome, email])).rows[0],
 };
 
 // ---------- Cotacoes ----------
 export const cotacoes = {
-  listar: () => db.prepare('SELECT * FROM cotacoes ORDER BY id DESC').all(),
-  obter: (id) => db.prepare('SELECT * FROM cotacoes WHERE id = ?').get(Number(id)),
-  criar: (d) => {
-    const info = db.prepare(`
-      INSERT INTO cotacoes (origem, destino, peso_kg, valor_mercadoria, tipo_veiculo, observacoes, prazo_resposta)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(d.origem, d.destino, d.peso_kg, d.valor_mercadoria, d.tipo_veiculo, d.observacoes || null, d.prazo_resposta);
-    return cotacoes.obter(Number(info.lastInsertRowid));
-  },
+  listar: async () => (await query('SELECT * FROM cotacoes ORDER BY id DESC')).rows,
+  obter: async (id) => (await query('SELECT * FROM cotacoes WHERE id = $1', [Number(id)])).rows[0],
+  criar: async (d) =>
+    (await query(
+      `INSERT INTO cotacoes (origem, destino, peso_kg, valor_mercadoria, tipo_veiculo, comercial, observacoes, prazo_resposta)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [d.origem, d.destino, d.peso_kg, d.valor_mercadoria, d.tipo_veiculo, d.comercial, d.observacoes || null, d.prazo_resposta]
+    )).rows[0],
+  fechar: async (id, { parceiro_vencedor, valor_fechado, comissao_variavel }) =>
+    (await query(
+      `UPDATE cotacoes
+       SET parceiro_vencedor = $2, valor_fechado = $3, comissao_variavel = $4, fechado_em = now()
+       WHERE id = $1 RETURNING *`,
+      [Number(id), parceiro_vencedor, valor_fechado, comissao_variavel || 0]
+    )).rows[0],
+  atualizarComissao: async (id, comissao) =>
+    (await query('UPDATE cotacoes SET comissao_variavel = $2 WHERE id = $1 RETURNING *', [Number(id), comissao || 0])).rows[0],
 };
 
 // ---------- Convites ----------
 export const convites = {
-  criar: (cotacao_id, parceiro_id, token) => {
-    db.prepare('INSERT INTO convites (cotacao_id, parceiro_id, token) VALUES (?, ?, ?)')
-      .run(cotacao_id, parceiro_id, token);
-  },
-  porToken: (token) => db.prepare('SELECT * FROM convites WHERE token = ?').get(token),
-  porCotacao: (cotacaoId) =>
-    db.prepare('SELECT * FROM convites WHERE cotacao_id = ?').all(Number(cotacaoId)),
-  registrarResposta: (token, { valor_cotado, prazo_entrega, comentario }) => {
-    db.prepare(`
-      UPDATE convites
-      SET valor_cotado = ?, prazo_entrega = ?, comentario = ?, respondido_em = datetime('now')
-      WHERE token = ?
-    `).run(valor_cotado, prazo_entrega || null, comentario || null, token);
-  },
+  criar: async (cotacao_id, parceiro_id, token) =>
+    (await query('INSERT INTO convites (cotacao_id, parceiro_id, token) VALUES ($1,$2,$3) RETURNING *',
+      [cotacao_id, parceiro_id, token])).rows[0],
+  porToken: async (token) => (await query('SELECT * FROM convites WHERE token = $1', [token])).rows[0],
+  porCotacao: async (cotacaoId) =>
+    (await query('SELECT * FROM convites WHERE cotacao_id = $1', [Number(cotacaoId)])).rows,
+  registrarResposta: async (token, { valor_cotado, prazo_entrega, comentario }) =>
+    (await query(
+      `UPDATE convites SET valor_cotado = $2, prazo_entrega = $3, comentario = $4, respondido_em = now()
+       WHERE token = $1 RETURNING *`,
+      [token, valor_cotado, prazo_entrega || null, comentario || null]
+    )).rows[0],
 };
 
-export default { parceiros, cotacoes, convites };
+export default { inicializarBanco, parceiros, cotacoes, convites };
