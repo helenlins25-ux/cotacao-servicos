@@ -75,11 +75,23 @@ Abra: **http://localhost:3000**
 
 ---
 
-## ✉️ Ativar e-mail real
+## ✉️ Envio de e-mail
 
-Por padrão roda em **modo simulado** (`MAIL_MODE=mock`): os links aparecem no log. Para enviar
-de verdade, defina no Render: `MAIL_MODE=smtp` e as variáveis `SMTP_HOST`, `SMTP_PORT`,
-`SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`.
+Modos (variável `MAIL_MODE`):
+- `mock` — simulado (links aparecem no log). Bom para testes.
+- `brevo` — **recomendado para o Render**: envia pela API HTTP do Brevo (porta 443, não é
+  bloqueada). Defina `BREVO_API_KEY` e `MAIL_FROM`.
+- `smtp` — SMTP nativo. Alguns hosts (como o Render) podem bloquear a porta 587.
+
+**Para usar o Brevo:**
+1. Crie conta grátis em brevo.com (300 e-mails/dia no plano free).
+2. Verifique o remetente (ex: `carlos.costa@stractton.com.br`) em Settings → Senders.
+3. Gere uma API key em Settings → SMTP & API → API Keys (começa com `xkeysib-`).
+4. No Render, defina: `MAIL_MODE=brevo`, `BREVO_API_KEY=xkeysib-...`,
+   `MAIL_FROM=Stractton Cotações <carlos.costa@stractton.com.br>`.
+
+> O envio é tolerante a falha: se o e-mail não sair, a cotação é criada do mesmo jeito e o
+> link de resposta fica disponível no painel da cotação.
 
 ---
 

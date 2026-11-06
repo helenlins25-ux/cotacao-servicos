@@ -1,6 +1,7 @@
-// Modulo de envio de e-mail SEM dependencias externas.
-// - MAIL_MODE=mock  -> apenas imprime no log (ideal para testes)
-// - MAIL_MODE=smtp  -> envia via SMTP usando net/tls nativos do Node
+// Modulo de envio de e-mail.
+// - MAIL_MODE=mock   -> apenas imprime no log (ideal para testes)
+// - MAIL_MODE=brevo  -> envia via API HTTP do Brevo (porta 443/HTTPS; funciona no Render)
+// - MAIL_MODE=smtp   -> envia via SMTP nativo (net/tls) — pode ser bloqueado em alguns hosts
 import net from 'node:net';
 import tls from 'node:tls';
 
@@ -16,7 +17,50 @@ export async function enviarEmail({ to, subject, html, text }) {
     console.log('===========================================================\n');
     return { mocked: true };
   }
+  if (mailMode === 'brevo') {
+    return enviarViaBrevo({ to, subject, html, text });
+  }
   return enviarViaSmtp({ to, subject, html, text });
+}
+
+// --- Envio via API HTTP do Brevo (recomendado para o Render) ---
+// Usa BREVO_API_KEY (comeca com "xkeysib-") e MAIL_FROM como remetente.
+async function enviarViaBrevo({ to, subject, html, text }) {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) throw new Error('BREVO_API_KEY nao configurada');
+
+  const fromRaw = process.env.MAIL_FROM || process.env.SMTP_USER || '';
+  // aceita "Nome <email@dominio>" ou so "email@dominio"
+  const mNome = fromRaw.match(/^\s*(.+?)\s*<([^>]+)>\s*$/);
+  const senderEmail = mNome ? mNome[2] : fromRaw.trim();
+  const senderName = mNome ? mNome[1] : 'Stractton Cotações';
+
+  const payload = {
+    sender: { email: senderEmail, name: senderName },
+    to: [{ email: to }],
+    subject,
+    htmlContent: html,
+    textContent: text,
+  };
+
+  const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'content-type': 'application/json',
+      'api-key': apiKey,
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!resp.ok) {
+    const corpo = await resp.text().catch(() => '');
+    throw new Error(`Brevo API ${resp.status}: ${corpo.slice(0, 300)}`);
+  }
+  const data = await resp.json().catch(() => ({}));
+  console.log(`[EMAIL] Enviado via Brevo para ${to} (messageId: ${data.messageId || '?'})`);
+  return data;
 }
 
 // --- Cliente SMTP minimalista (AUTH LOGIN + STARTTLS opcional) ---
