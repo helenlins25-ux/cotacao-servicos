@@ -8,18 +8,13 @@ services:
     buildCommand: "" # sem dependencias externas, nada a instalar
     startCommand: "node --experimental-sqlite src/server.js"
 
-    # Disco persistente GRATIS -> os dados (SQLite) sobrevivem a reinicios e deploys.
-    disk:
-      name: dados
-      mountPath: /var/data
-      sizeGB: 1
+    # OBS: o plano "free" do Render nao permite disco persistente.
+    # Assim, os dados do SQLite sao temporarios (reiniciam a cada deploy/hibernacao).
+    # Para dados permanentes, use um plano pago com disco OU um banco externo (ver README).
 
     envVars:
       - key: NODE_VERSION
         value: "22"
-      # Aponta o banco SQLite para o disco persistente acima.
-      - key: DATA_DIR
-        value: /var/data
       # Modo de e-mail: comeca simulado; troque para "smtp" quando tiver credenciais.
       - key: MAIL_MODE
         value: mock

@@ -46,8 +46,13 @@ Abra: **http://localhost:3000**
 
 ## 🚀 Publicar online (deploy no Render) — grátis
 
-O projeto já vem com `render.yaml` configurado, incluindo **disco persistente** (os dados
-não somem entre deploys).
+O projeto já vem com `render.yaml` configurado.
+
+> ⚠️ **Sobre persistência dos dados:** o **plano gratuito do Render não permite disco
+> persistente**. No plano free, os dados do SQLite são **temporários** — reiniciam a cada
+> deploy ou quando o serviço hiberna. Para dados permanentes, use um plano pago do Render
+> (com disco) ou conecte um banco externo. Para apenas **demonstrar/testar** o fluxo, o free
+> funciona bem.
 
 1. Suba este repositório no **GitHub** (já feito, se você está lendo isto lá).
 2. Crie uma conta grátis em **https://render.com** (pode entrar com o GitHub).
@@ -58,7 +63,7 @@ não somem entre deploys).
 6. Pronto! Acesse essa URL no navegador.
 
 > **Plano grátis:** o serviço "hiberna" após ~15 min sem uso e acorda na próxima visita
-> (a primeira abertura pode levar ~30s). Os dados ficam salvos no disco persistente.
+> (a primeira abertura pode levar ~30s). No plano free os dados são temporários (ver aviso acima).
 
 ---
 
@@ -90,7 +95,7 @@ src/
   db.js        # banco SQLite embutido (node:sqlite)
   mailer.js    # envio de e-mail: modo mock ou SMTP nativo
   views.js     # geração das páginas HTML
-render.yaml    # configuração de deploy (Render) com disco persistente
+render.yaml    # configuração de deploy (Render)
 ```
 
 Variáveis de ambiente úteis:
@@ -98,6 +103,6 @@ Variáveis de ambiente úteis:
 | Variável    | Default                 | Descrição                                   |
 |-------------|-------------------------|---------------------------------------------|
 | `PORT`      | `3000`                  | Porta do servidor (o Render define sozinho) |
-| `DATA_DIR`  | `./data`                | Pasta do arquivo SQLite (disco persistente) |
+| `DATA_DIR`  | `./data`                | Pasta do arquivo SQLite (use disco em plano pago) |
 | `BASE_URL`  | detectado da requisição | URL pública usada nos links dos e-mails     |
 | `MAIL_MODE` | `mock`                  | `mock` (simulado) ou `smtp` (envio real)    |
