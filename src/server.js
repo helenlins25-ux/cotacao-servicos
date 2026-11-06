@@ -1,10 +1,18 @@
 // Servidor HTTP usando apenas a lib padrao do Node.js (sem express).
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { dirname, join, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { inicializarBanco, parceiros, cotacoes, convites } from './db.js';
 import { enviarEmail, mailMode } from './mailer.js';
 import * as negocio from './negocio.js';
 import * as views from './views.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = join(__dirname, '..', 'public');
+const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.gif': 'image/gif', '.webp': 'image/webp' };
 
 const PORT = Number(process.env.PORT || 3000);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -51,6 +59,22 @@ async function handler(req, res) {
   const metodo = req.method;
 
   try {
+    // ---- Arquivos estaticos (logo, imagens) ----
+    if (metodo === 'GET' && path.startsWith('/static/')) {
+      const nome = path.replace('/static/', '').replace(/\.\./g, ''); // evita path traversal
+      const arquivo = join(PUBLIC_DIR, nome);
+      if (existsSync(arquivo)) {
+        const dados = await readFile(arquivo);
+        res.writeHead(200, {
+          'Content-Type': MIME[extname(arquivo).toLowerCase()] || 'application/octet-stream',
+          'Cache-Control': 'public, max-age=86400',
+        });
+        return res.end(dados);
+      }
+      res.writeHead(404);
+      return res.end('not found');
+    }
+
     // ---- Dashboard (home) ----
     if (metodo === 'GET' && path === '/') {
       const dash = await negocio.calcularDashboard();

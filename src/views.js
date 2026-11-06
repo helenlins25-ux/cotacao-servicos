@@ -1,25 +1,8 @@
 // Funcoes que geram as paginas HTML do sistema.
 
-// Simbolo "S" estilizado (dourado/preto) inspirado na logo da Stractton Group.
-// SVG embutido = funciona em qualquer lugar sem arquivo externo.
+// Logo oficial da Stractton Group (imagem servida de /static/logo.png).
 function logoSvg() {
-  return `<svg width="38" height="38" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="Stractton Group">
-    <defs>
-      <linearGradient id="ouro" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#f6e27a"/>
-        <stop offset="0.5" stop-color="#d4af37"/>
-        <stop offset="1" stop-color="#9a7d1e"/>
-      </linearGradient>
-      <linearGradient id="grafite" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#4b4f57"/>
-        <stop offset="1" stop-color="#15171c"/>
-      </linearGradient>
-    </defs>
-    <!-- seta superior (dourada) -->
-    <path d="M20 30 L62 30 L62 14 L86 38 L62 62 L62 46 L36 46 Z" fill="url(#ouro)"/>
-    <!-- seta inferior (grafite) -->
-    <path d="M80 70 L38 70 L38 86 L14 62 L38 38 L38 54 L64 54 Z" fill="url(#grafite)"/>
-  </svg>`;
+  return `<img src="/static/logo.png" alt="Stractton Group" height="46" style="display:block;border-radius:6px;" />`;
 }
 
 function layout(title, body) {
@@ -88,7 +71,6 @@ function layout(title, body) {
   <header>
     <div class="marca">
       ${logoSvg()}
-      <div class="nome"><b>STRACTTON</b><span>GROUP</span></div>
     </div>
     <nav>
       <a href="/">Dashboard</a>
