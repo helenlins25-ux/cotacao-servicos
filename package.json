@@ -1,0 +1,10 @@
+{
+  "name": "cotacao-servicos",
+  "version": "1.0.0",
+  "description": "App de cotacao de servicos de transporte com disparo por e-mail e resposta dos parceiros via link. Zero dependencias externas (usa apenas a lib padrao do Node.js).",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-sqlite src/server.js"
+  }
+}

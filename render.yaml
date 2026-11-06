@@ -1,0 +1,42 @@
+# Configuracao de deploy para o Render (https://render.com)
+# Basta conectar o repositorio no Render que ele le este arquivo automaticamente.
+services:
+  - type: web
+    name: cotacao-servicos
+    runtime: node
+    plan: free
+    buildCommand: "" # sem dependencias externas, nada a instalar
+    startCommand: "node --experimental-sqlite src/server.js"
+
+    # Disco persistente GRATIS -> os dados (SQLite) sobrevivem a reinicios e deploys.
+    disk:
+      name: dados
+      mountPath: /var/data
+      sizeGB: 1
+
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Aponta o banco SQLite para o disco persistente acima.
+      - key: DATA_DIR
+        value: /var/data
+      # Modo de e-mail: comeca simulado; troque para "smtp" quando tiver credenciais.
+      - key: MAIL_MODE
+        value: mock
+      # URL publica do app (o Render preenche o host automaticamente nos links,
+      # mas voce pode fixar aqui depois do 1o deploy, ex: https://seu-app.onrender.com)
+      - key: BASE_URL
+        sync: false
+      # Preencha quando ativar o envio real (MAIL_MODE=smtp):
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_SECURE
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
