@@ -49,7 +49,18 @@ function parsePrazo(valor) {
 async function enviarCotacaoAoParceiro(req, c, parceiro, tokenConvite) {
   const link = `${baseUrlDe(req)}/responder/${tokenConvite}`;
   const prazoFmt = new Date(c.prazo_resposta).toLocaleString('pt-br', { timeZone: 'America/Sao_Paulo' });
-  const fmtDia = (d) => { if (!d) return null; const s = String(d).slice(0,10); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : s; };
+  // formata data (dia) em dd/mm/aaaa, aceitando string ("2026-11-09") OU objeto Date (Postgres)
+  const fmtDia = (d) => {
+    if (!d) return null;
+    let iso;
+    if (d instanceof Date) iso = d.toISOString().slice(0, 10);
+    else {
+      const s = String(d);
+      iso = s.includes('T') ? s.slice(0, 10) : s.slice(0, 10);
+    }
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+  };
   const coletaFmt = fmtDia(c.data_coleta);
   const entregaFmt = c.data_entrega ? fmtDia(c.data_entrega) : 'A combinar';
   const corpoHtml = `

@@ -98,11 +98,14 @@ const fmtData = (iso) => {
   });
 };
 // Formata uma data (so dia) tipo "2026-11-20" como "20/11/2026".
+// Aceita string (SQLite) ou objeto Date (Postgres/Supabase).
 const fmtDataSimples = (d) => {
   if (!d) return '-';
-  const s = typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10);
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : s;
+  let iso;
+  if (d instanceof Date) iso = d.toISOString().slice(0, 10);
+  else iso = String(d).slice(0, 10);
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 };
 const fmtEntrega = (d) => (d ? fmtDataSimples(d) : 'A combinar');
 
