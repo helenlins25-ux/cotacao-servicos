@@ -259,10 +259,24 @@ export function paginaListaCotacoes(cotacoes) {
 
 // ---------------- DETALHE (INTERNO) ----------------
 export function paginaDetalheCotacao(c, convites, info) {
-  const { status, faturamento, vencedorNome, percFixo } = info;
+  const { status, faturamento, vencedorNome, percFixo, expirada, aviso } = info;
 
   const linhas = convites.map(v => {
     const ehVencedor = c.parceiro_vencedor && v.parceiro_id === c.parceiro_vencedor;
+    // acoes: so para quem ainda NAO respondeu e enquanto a cotacao esta no prazo
+    let acoes = '<span class="muted">—</span>';
+    if (!v.respondido_em && !expirada && status !== 'fechada') {
+      acoes = `
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+          <form method="post" action="/cotacoes/${c.id}/convites/${v.id}/reenviar" style="margin:0">
+            <button type="submit" style="padding:5px 10px;font-size:13px">🔄 Reenviar</button>
+          </form>
+          <form method="post" action="/cotacoes/${c.id}/convites/${v.id}/cancelar" style="margin:0"
+                onsubmit="return confirm('Cancelar o convite de ${String(v.nome).replace(/'/g, "\\'")}?');">
+            <button type="submit" style="background:#fff;color:#b91c1c;border-color:#fca5a5;padding:5px 10px;font-size:13px">❌ Cancelar</button>
+          </form>
+        </div>`;
+    }
     return `
     <tr${ehVencedor ? ' style="background:#f0fdf4"' : ''}>
       <td>${v.nome} ${ehVencedor ? '🏆' : ''}<br><span class="muted">${v.email}</span></td>
@@ -270,6 +284,7 @@ export function paginaDetalheCotacao(c, convites, info) {
       <td>${v.prazo_entrega || '<span class="muted">—</span>'}</td>
       <td>${v.comentario || '<span class="muted">—</span>'}</td>
       <td>${v.respondido_em ? '✅ ' + fmtData(v.respondido_em) : '<span class="muted">aguardando</span>'}</td>
+      <td style="text-align:right">${acoes}</td>
     </tr>`;
   }).join('');
 
@@ -301,6 +316,7 @@ export function paginaDetalheCotacao(c, convites, info) {
 
   return layout(`Cotação #${c.id}`, `
     <h1>Cotação #${c.id} <span class="tag ${status}">${rotuloStatus[status] || status}</span></h1>
+    ${aviso ? `<div class="${aviso.tipo}">${aviso.texto}</div><br>` : ''}
     <div class="card">
       <div class="row">
         <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
@@ -318,7 +334,7 @@ export function paginaDetalheCotacao(c, convites, info) {
     <div class="card">
       <h2>Respostas dos parceiros</h2>
       <table>
-        <thead><tr><th>Parceiro</th><th>Valor cotado</th><th>Prazo entrega</th><th>Comentário</th><th>Status</th></tr></thead>
+        <thead><tr><th>Parceiro</th><th>Valor cotado</th><th>Prazo entrega</th><th>Comentário</th><th>Status</th><th style="text-align:right">Ações</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
     </div>

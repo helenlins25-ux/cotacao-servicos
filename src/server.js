@@ -28,6 +28,36 @@ function baseUrlDe(req) {
 const token = () => randomBytes(18).toString('hex');
 const parsePrazo = (valor) => new Date(valor).toISOString();
 
+// Monta e envia (tolerante a falha) o e-mail de uma cotacao para um parceiro.
+// Retorna true se enviou, false se falhou (sem derrubar a requisicao).
+async function enviarCotacaoAoParceiro(req, c, parceiro, tokenConvite) {
+  const link = `${baseUrlDe(req)}/responder/${tokenConvite}`;
+  const prazoFmt = new Date(c.prazo_resposta).toLocaleString('pt-br');
+  const corpoHtml = `
+    <p>Olá ${parceiro.nome},</p>
+    <p>Temos uma solicitação de cotação de transporte:</p>
+    <ul>
+      <li><strong>Origem → Destino:</strong> ${c.origem} → ${c.destino}</li>
+      <li><strong>Peso da carga:</strong> ${c.peso_kg} kg</li>
+      <li><strong>Valor da mercadoria:</strong> R$ ${c.valor_mercadoria}</li>
+      <li><strong>Tipo de veículo:</strong> ${c.tipo_veiculo}</li>
+    </ul>
+    <p><strong>Responda até ${prazoFmt}</strong> clicando no link:</p>
+    <p><a href="${link}">${link}</a></p>`;
+  try {
+    await enviarEmail({
+      to: parceiro.email,
+      subject: `Solicitação de cotação #${c.id}: ${c.origem} → ${c.destino}`,
+      html: corpoHtml,
+      text: `Cotacao #${c.id}\nTrajeto: ${c.origem} -> ${c.destino}\nPeso: ${c.peso_kg} kg\nValor mercadoria: R$ ${c.valor_mercadoria}\nVeiculo: ${c.tipo_veiculo}\nResponda ate ${prazoFmt}:\n${link}`,
+    });
+    return true;
+  } catch (errMail) {
+    console.error(`[EMAIL] Falha ao enviar para ${parceiro.email} (cotacao #${c.id}):`, errMail.message);
+    return false;
+  }
+}
+
 function html(res, body, status = 200) {
   res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(body);
@@ -149,32 +179,7 @@ async function handler(req, res) {
         if (!parceiro) continue;
         const t = token();
         await convites.criar(c.id, parceiro.id, t);
-        const link = `${baseUrlDe(req)}/responder/${t}`;
-        const prazoFmt = new Date(c.prazo_resposta).toLocaleString('pt-br');
-        const corpoHtml = `
-          <p>Olá ${parceiro.nome},</p>
-          <p>Temos uma nova solicitação de cotação de transporte:</p>
-          <ul>
-            <li><strong>Origem → Destino:</strong> ${c.origem} → ${c.destino}</li>
-            <li><strong>Peso da carga:</strong> ${c.peso_kg} kg</li>
-            <li><strong>Valor da mercadoria:</strong> R$ ${c.valor_mercadoria}</li>
-            <li><strong>Tipo de veículo:</strong> ${c.tipo_veiculo}</li>
-          </ul>
-          <p><strong>Responda até ${prazoFmt}</strong> clicando no link:</p>
-          <p><a href="${link}">${link}</a></p>`;
-        // O envio de e-mail NAO pode derrubar a criacao da cotacao.
-        // Se falhar (ex: SMTP bloqueado), registramos o erro e seguimos;
-        // o link fica sempre disponivel no painel da cotacao.
-        try {
-          await enviarEmail({
-            to: parceiro.email,
-            subject: `Solicitação de cotação #${c.id}: ${c.origem} → ${c.destino}`,
-            html: corpoHtml,
-            text: `Nova cotacao #${c.id}\nTrajeto: ${c.origem} -> ${c.destino}\nPeso: ${c.peso_kg} kg\nValor mercadoria: R$ ${c.valor_mercadoria}\nVeiculo: ${c.tipo_veiculo}\nResponda ate ${prazoFmt}:\n${link}`,
-          });
-        } catch (errMail) {
-          console.error(`[EMAIL] Falha ao enviar para ${parceiro.email} (cotacao #${c.id}):`, errMail.message);
-        }
+        await enviarCotacaoAoParceiro(req, c, parceiro, t);
       }
       return redirect(res, `/cotacoes/${c.id}`);
     }
@@ -185,6 +190,41 @@ async function handler(req, res) {
       const body = await lerBody(req);
       await cotacoes.atualizarComissao(m[1], Number(body.comissao_variavel || 0));
       return redirect(res, `/cotacoes/${m[1]}`);
+    }
+
+    // ---- Reenviar cotacao a um parceiro (reenvia o mesmo link por e-mail) ----
+    let mReenv = path.match(/^\/cotacoes\/(\d+)\/convites\/(\d+)\/reenviar$/);
+    if (metodo === 'POST' && mReenv) {
+      const [, cotId, convId] = mReenv;
+      const c = await cotacoes.obter(cotId);
+      const convite = await convites.porId(convId);
+      if (!c || !convite || convite.cotacao_id !== Number(cotId)) {
+        return html(res, views.paginaSimples('Erro', 'Convite não encontrado. <a href="/cotacoes">Voltar</a>'), 404);
+      }
+      if (negocio.expirada(c)) {
+        return html(res, views.paginaSimples('Prazo encerrado', 'Não é possível reenviar: o prazo desta cotação já encerrou. <a href="/cotacoes/' + cotId + '">Voltar</a>'), 409);
+      }
+      if (convite.respondido_em) {
+        return html(res, views.paginaSimples('Já respondido', 'Este parceiro já respondeu — não é necessário reenviar. <a href="/cotacoes/' + cotId + '">Voltar</a>'), 409);
+      }
+      const parceiro = await parceiros.obter(convite.parceiro_id);
+      const enviado = await enviarCotacaoAoParceiro(req, c, parceiro, convite.token);
+      return redirect(res, `/cotacoes/${cotId}?reenviado=${enviado ? '1' : 'falha'}`);
+    }
+
+    // ---- Cancelar convite de um parceiro (so se ainda nao respondeu) ----
+    let mCanc = path.match(/^\/cotacoes\/(\d+)\/convites\/(\d+)\/cancelar$/);
+    if (metodo === 'POST' && mCanc) {
+      const [, cotId, convId] = mCanc;
+      const convite = await convites.porId(convId);
+      if (!convite || convite.cotacao_id !== Number(cotId)) {
+        return html(res, views.paginaSimples('Erro', 'Convite não encontrado. <a href="/cotacoes">Voltar</a>'), 404);
+      }
+      if (convite.respondido_em) {
+        return html(res, views.paginaSimples('Não é possível cancelar', 'Este parceiro já enviou uma proposta; não é possível cancelar o convite dele. <a href="/cotacoes/' + cotId + '">Voltar</a>'), 409);
+      }
+      await convites.excluir(convId);
+      return redirect(res, `/cotacoes/${cotId}?cancelado=1`);
     }
 
     // ---- Detalhe cotacao (INTERNO: mostra faturamento) ----
@@ -202,7 +242,12 @@ async function handler(req, res) {
       const status = negocio.statusDe(c, convs);
       const faturamento = negocio.faturamentoDe(c);
       const vencedorNome = c.parceiro_vencedor ? (await parceiros.obter(c.parceiro_vencedor))?.nome : null;
-      return html(res, views.paginaDetalheCotacao(c, convComNome, { status, faturamento, vencedorNome, percFixo: negocio.PERC_FIXO }));
+      // mensagens de feedback (reenvio/cancelamento)
+      let aviso = null;
+      if (url.searchParams.get('reenviado') === '1') aviso = { tipo: 'ok', texto: '✅ Cotação reenviada ao parceiro por e-mail.' };
+      else if (url.searchParams.get('reenviado') === 'falha') aviso = { tipo: 'warn', texto: '⚠️ Não foi possível enviar o e-mail (o link continua válido no painel).' };
+      else if (url.searchParams.get('cancelado') === '1') aviso = { tipo: 'ok', texto: '✅ Convite do parceiro cancelado.' };
+      return html(res, views.paginaDetalheCotacao(c, convComNome, { status, faturamento, vencedorNome, percFixo: negocio.PERC_FIXO, expirada: negocio.expirada(c), aviso }));
     }
 
     // ---- Pagina de resposta do parceiro (GET) ----

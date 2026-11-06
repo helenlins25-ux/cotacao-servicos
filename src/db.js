@@ -85,8 +85,10 @@ export const convites = {
     (await query('INSERT INTO convites (cotacao_id, parceiro_id, token) VALUES ($1,$2,$3) RETURNING *',
       [cotacao_id, parceiro_id, token])).rows[0],
   porToken: async (token) => (await query('SELECT * FROM convites WHERE token = $1', [token])).rows[0],
+  porId: async (id) => (await query('SELECT * FROM convites WHERE id = $1', [Number(id)])).rows[0],
   porCotacao: async (cotacaoId) =>
     (await query('SELECT * FROM convites WHERE cotacao_id = $1', [Number(cotacaoId)])).rows,
+  excluir: async (id) => { await query('DELETE FROM convites WHERE id = $1', [Number(id)]); },
   registrarResposta: async (token, { valor_cotado, prazo_entrega, comentario }) =>
     (await query(
       `UPDATE convites SET valor_cotado = $2, prazo_entrega = $3, comentario = $4, respondido_em = now()
