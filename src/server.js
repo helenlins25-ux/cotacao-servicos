@@ -26,13 +26,29 @@ function baseUrlDe(req) {
 }
 
 const token = () => randomBytes(18).toString('hex');
-const parsePrazo = (valor) => new Date(valor).toISOString();
+
+// Fuso horario da empresa (Brasilia = UTC-3). Configuravel via TZ_OFFSET_HORAS.
+const TZ_OFFSET_HORAS = Number(process.env.TZ_OFFSET_HORAS ?? -3);
+
+// O input datetime-local (ex: "2026-11-06T20:00") NAO traz fuso. O navegador
+// envia no horario LOCAL do usuario. Interpretamos como horario de Brasilia
+// (UTC-3) e convertemos para o instante UTC correto, para armazenar/comparar.
+function parsePrazo(valor) {
+  // valor: "YYYY-MM-DDTHH:MM" (sem timezone)
+  const m = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return new Date(valor).toISOString(); // fallback
+  const [, ano, mes, dia, hora, min] = m.map(Number);
+  // Date.UTC monta o instante como se fosse UTC; subtraindo o offset local,
+  // obtemos o UTC real. Ex: 20:00 em UTC-3 => 23:00 UTC.
+  const ms = Date.UTC(ano, mes - 1, dia, hora, min) - TZ_OFFSET_HORAS * 3600 * 1000;
+  return new Date(ms).toISOString();
+}
 
 // Monta e envia (tolerante a falha) o e-mail de uma cotacao para um parceiro.
 // Retorna true se enviou, false se falhou (sem derrubar a requisicao).
 async function enviarCotacaoAoParceiro(req, c, parceiro, tokenConvite) {
   const link = `${baseUrlDe(req)}/responder/${tokenConvite}`;
-  const prazoFmt = new Date(c.prazo_resposta).toLocaleString('pt-br');
+  const prazoFmt = new Date(c.prazo_resposta).toLocaleString('pt-br', { timeZone: 'America/Sao_Paulo' });
   const corpoHtml = `
     <p>Olá ${parceiro.nome},</p>
     <p>Temos uma solicitação de cotação de transporte:</p>

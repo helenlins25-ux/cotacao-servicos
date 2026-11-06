@@ -91,7 +91,11 @@ const fmtData = (iso) => {
   if (!iso) return '-';
   const s = typeof iso === 'string' ? iso : new Date(iso).toISOString();
   const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
-  return d.toLocaleString('pt-br', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  // Sempre exibe no fuso de Brasilia, independente do fuso do servidor (Render=UTC).
+  return d.toLocaleString('pt-br', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
+  });
 };
 const rotuloStatus = {
   aberta: 'Aberta',
