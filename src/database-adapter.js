@@ -18,7 +18,11 @@ if (usandoPostgres) {
     ssl: { rejectUnauthorized: false },
   });
   _query = async (sql, params = []) => pool.query(sql, params);
-  console.log('[DB] Usando PostgreSQL (Supabase).');
+  const host = (process.env.DATABASE_URL.match(/@([^:/]+)/) || [])[1] || '?';
+  console.log(`[DB] Usando PostgreSQL (Supabase) via host: ${host}`);
+  if (!/pooler\.supabase\.com/.test(host)) {
+    console.warn('[DB] AVISO: a conexao direta do Supabase usa IPv6 e pode falhar no Render (ENETUNREACH). Use a string do "Transaction pooler" (host *.pooler.supabase.com, porta 6543).');
+  }
 } else {
   // ----- Motor SQLite (testes locais) -----
   const { DatabaseSync } = await import('node:sqlite');
