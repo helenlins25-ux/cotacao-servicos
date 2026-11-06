@@ -5,7 +5,8 @@ function logoSvg() {
   return `<img src="/static/logo.png" alt="Stractton Group" height="46" style="display:block;border-radius:6px;" />`;
 }
 
-function layout(title, body) {
+// externo=true -> pagina vista pelo PARCEIRO (sem menu interno de navegacao).
+function layout(title, body, externo = false) {
   return `<!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -72,12 +73,12 @@ function layout(title, body) {
     <div class="marca">
       ${logoSvg()}
     </div>
-    <nav>
+    ${externo ? '' : `<nav>
       <a href="/">Dashboard</a>
       <a href="/cotacoes">Cotações</a>
       <a href="/cotacoes/nova">Nova cotação</a>
       <a href="/parceiros">Parceiros</a>
-    </nav>
+    </nav>`}
   </header>
   <div class="container">${body}</div>
   <footer>Stractton Group · Sistema de Cotação de Serviços de Transporte</footer>
@@ -363,13 +364,13 @@ export function paginaRespostaParceiro(c, convite, expirada) {
   if (expirada) {
     return layout('Prazo encerrado', cabecalho + `
       <div class="card"><div class="warn">⏰ O prazo para responder esta cotação foi encerrado em ${fmtData(c.prazo_resposta)}. Não é mais possível enviar uma proposta.</div></div>
-    `);
+    `, true);
   }
 
   if (convite.respondido_em) {
     return layout('Resposta registrada', cabecalho + `
       <div class="card"><div class="ok">✅ Sua proposta de <strong>${fmtMoeda(convite.valor_cotado)}</strong> já foi registrada em ${fmtData(convite.respondido_em)}. Obrigado!</div></div>
-    `);
+    `, true);
   }
 
   return layout('Responder cotação', cabecalho + `
@@ -385,9 +386,9 @@ export function paginaRespostaParceiro(c, convite, expirada) {
         <br><button type="submit">Enviar proposta</button>
       </form>
     </div>
-  `);
+  `, true);
 }
 
-export function paginaSimples(titulo, html) {
-  return layout(titulo, `<div class="card">${html}</div>`);
+export function paginaSimples(titulo, html, externo = false) {
+  return layout(titulo, `<div class="card">${html}</div>`, externo);
 }

@@ -255,7 +255,7 @@ async function handler(req, res) {
     m = path.match(/^\/responder\/([a-f0-9]+)$/i);
     if (metodo === 'GET' && m) {
       const convite = await convites.porToken(m[1]);
-      if (!convite) return html(res, views.paginaSimples('Link inválido', 'Este link de cotação não existe.'), 404);
+      if (!convite) return html(res, views.paginaSimples('Link inválido', 'Este link de cotação não existe.', true), 404);
       const c = await cotacoes.obter(convite.cotacao_id);
       const p = await parceiros.obter(convite.parceiro_id);
       return html(res, views.paginaRespostaParceiro(c, { ...convite, nome: p?.nome || '' }, negocio.expirada(c)));
@@ -264,14 +264,14 @@ async function handler(req, res) {
     // ---- Registrar resposta (POST) -- BLOQUEIA apos o prazo ----
     if (metodo === 'POST' && m) {
       const convite = await convites.porToken(m[1]);
-      if (!convite) return html(res, views.paginaSimples('Link inválido', 'Este link de cotação não existe.'), 404);
+      if (!convite) return html(res, views.paginaSimples('Link inválido', 'Este link de cotação não existe.', true), 404);
       const c = await cotacoes.obter(convite.cotacao_id);
 
       if (negocio.expirada(c)) {
-        return html(res, views.paginaSimples('Prazo encerrado', '⏰ O prazo para responder esta cotação já foi encerrado. Nenhuma resposta foi registrada.'), 403);
+        return html(res, views.paginaSimples('Prazo encerrado', '⏰ O prazo para responder esta cotação já foi encerrado. Nenhuma resposta foi registrada.', true), 403);
       }
       if (convite.respondido_em) {
-        return html(res, views.paginaSimples('Já respondido', 'Você já enviou uma proposta para esta cotação.'));
+        return html(res, views.paginaSimples('Já respondido', 'Você já enviou uma proposta para esta cotação.', true));
       }
 
       const body = await lerBody(req);
@@ -280,13 +280,13 @@ async function handler(req, res) {
         prazo_entrega: body.prazo_entrega,
         comentario: body.comentario,
       });
-      return html(res, views.paginaSimples('Proposta enviada', '✅ Sua proposta foi registrada com sucesso. Obrigado!'));
+      return html(res, views.paginaSimples('Proposta enviada', '✅ Sua proposta foi registrada com sucesso. Obrigado!', true));
     }
 
-    return html(res, views.paginaSimples('404', 'Página não encontrada.'), 404);
+    return html(res, views.paginaSimples('404', 'Página não encontrada.', true), 404);
   } catch (err) {
     console.error('Erro:', err);
-    return html(res, views.paginaSimples('Erro', 'Ocorreu um erro interno: ' + err.message), 500);
+    return html(res, views.paginaSimples('Erro', 'Ocorreu um erro interno: ' + err.message, true), 500);
   }
 }
 
