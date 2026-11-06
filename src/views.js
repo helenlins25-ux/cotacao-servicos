@@ -11,7 +11,14 @@ function layout(title, body, externo = false) {
 <html lang="pt-br">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111317" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Stractton Cotações" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/static/logo.png" />
+  <link rel="icon" href="/static/logo.png" />
   <title>${title}</title>
   <style>
     :root {
@@ -19,29 +26,35 @@ function layout(title, body, externo = false) {
       --cinza:#64748b; --borda:#e2e8f0; --bg:#f6f7f9;
     }
     * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; background:var(--bg); color:#0f172a; }
     header {
       background: linear-gradient(135deg, var(--preto) 0%, var(--grafite) 100%);
-      color:#fff; padding:14px 24px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+      color:#fff; padding:14px 20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
       border-bottom:3px solid var(--ouro);
+      padding-left: max(20px, env(safe-area-inset-left));
+      padding-right: max(20px, env(safe-area-inset-right));
     }
     header .marca { display:flex; align-items:center; gap:12px; margin-right:12px; }
     header .marca .nome { line-height:1.05; }
     header .marca .nome b { font-size:18px; color:var(--ouro-claro); letter-spacing:.5px; }
     header .marca .nome span { display:block; font-size:10px; letter-spacing:4px; color:#cbd5e1; }
     header nav { display:flex; gap:4px; flex-wrap:wrap; }
-    header a { color:#d8dce3; text-decoration:none; font-size:14px; padding:6px 10px; border-radius:6px; }
-    header a:hover { color:#fff; background:rgba(212,175,55,.15); }
-    .container { max-width:1000px; margin:24px auto; padding:0 16px; }
+    header a { color:#d8dce3; text-decoration:none; font-size:15px; padding:8px 12px; border-radius:6px; }
+    header a:hover, header a:active { color:#fff; background:rgba(212,175,55,.15); }
+    /* largura ampla (quase tela inteira), com um respiro nas laterais */
+    .container { max-width:1400px; margin:20px auto; padding:0 24px; }
     h1 { font-size:22px; } h2 { font-size:18px; }
     .card { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:20px; margin-bottom:20px; }
     label { display:block; font-size:13px; font-weight:600; margin:12px 0 4px; }
-    input, select, textarea { width:100%; padding:9px 10px; border:1px solid var(--borda); border-radius:8px; font-size:14px; }
+    input, select, textarea { width:100%; padding:11px 12px; border:1px solid var(--borda); border-radius:8px; font-size:16px; }
     textarea { min-height:70px; resize:vertical; }
     .row { display:flex; gap:16px; flex-wrap:wrap; }
     .row > div { flex:1; min-width:180px; }
-    button, .btn { background:var(--preto); color:var(--ouro-claro); border:1px solid var(--ouro); padding:10px 18px; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; text-decoration:none; display:inline-block; }
+    button, .btn { background:var(--preto); color:var(--ouro-claro); border:1px solid var(--ouro); padding:11px 18px; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer; text-decoration:none; display:inline-block; }
     button:hover, .btn:hover { background:var(--grafite); }
+    /* tabelas rolam horizontalmente no celular sem quebrar o layout */
+    .tabela-wrap { width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
     table { width:100%; border-collapse:collapse; font-size:14px; }
     th, td { text-align:left; padding:10px; border-bottom:1px solid var(--borda); }
     th { color:var(--cinza); font-size:12px; text-transform:uppercase; }
@@ -56,7 +69,7 @@ function layout(title, body, externo = false) {
     .ok { background:#dcfce7; color:#166534; padding:14px; border-radius:8px; }
     .warn { background:#fef3c7; color:#92400e; padding:14px; border-radius:8px; }
     .big { font-size:20px; font-weight:700; }
-    .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+    .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; }
     .kpi { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:16px; }
     .kpi .n { font-size:26px; font-weight:800; }
     .kpi .l { font-size:12px; color:var(--cinza); text-transform:uppercase; letter-spacing:.03em; }
@@ -66,6 +79,25 @@ function layout(title, body, externo = false) {
     .kpi.roxo { border-top:3px solid var(--ouro); }
     a { color:#b8860b; }
     footer { text-align:center; color:var(--cinza); font-size:12px; padding:24px; }
+
+    /* ===== Responsivo para CELULAR ===== */
+    @media (max-width: 640px) {
+      header { padding:12px 16px; gap:10px; }
+      header .marca img { height:38px !important; }
+      header nav { width:100%; gap:2px; }
+      header nav a { flex:1 1 auto; text-align:center; font-size:14px; padding:10px 6px; background:rgba(255,255,255,.06); }
+      .container { padding:0 12px; margin:14px auto; }
+      .card { padding:16px; border-radius:12px; }
+      h1 { font-size:20px; }
+      /* cada campo ocupa a linha inteira no celular */
+      .row { gap:10px; }
+      .row > div { flex:1 1 100%; min-width:0; }
+      /* botoes ocupam a largura toda (mais faceis de tocar) */
+      button, .btn { width:100%; padding:13px 18px; text-align:center; }
+      /* acoes da tabela (reenviar/cancelar) empilhadas */
+      table { font-size:13px; }
+      th, td { padding:8px 6px; }
+    }
   </style>
 </head>
 <body>
@@ -157,10 +189,10 @@ export function paginaDashboard(d) {
 
     <div class="card">
       <h2>Desempenho por comercial</h2>
-      <table>
+      <div class="tabela-wrap"><table>
         <thead><tr><th>Comercial</th><th>Cotações</th><th>Fechadas</th><th>Faturamento</th></tr></thead>
         <tbody>${linhasComercial}</tbody>
-      </table>
+      </table></div>
     </div>
 
     <div class="card">
@@ -200,10 +232,10 @@ export function paginaParceiros(parceiros, msg) {
     </div>
     <div class="card">
       <h2>Lista de parceiros</h2>
-      <table>
+      <div class="tabela-wrap"><table>
         <thead><tr><th>Nome</th><th>E-mail</th><th>Cadastrado em</th><th></th></tr></thead>
         <tbody>${linhas}</tbody>
-      </table>
+      </table></div>
     </div>
   `);
 }
@@ -273,10 +305,10 @@ export function paginaListaCotacoes(cotacoes) {
     <div class="card">
       <a class="btn" href="/cotacoes/nova">+ Nova cotação</a>
       <br><br>
-      <table>
+      <div class="tabela-wrap"><table>
         <thead><tr><th>#</th><th>Trajeto</th><th>Comercial</th><th>Respostas</th><th>Prazo</th><th>Status</th><th>Faturamento</th></tr></thead>
         <tbody>${linhas}</tbody>
-      </table>
+      </table></div>
     </div>
   `);
 }
@@ -363,10 +395,10 @@ export function paginaDetalheCotacao(c, convites, info) {
     ${blocoFechamento}
     <div class="card">
       <h2>Respostas dos parceiros</h2>
-      <table>
+      <div class="tabela-wrap"><table>
         <thead><tr><th>Parceiro</th><th>Valor cotado</th><th>Prazo entrega</th><th>Comentário</th><th>Status</th><th style="text-align:right">Ações</th></tr></thead>
         <tbody>${linhas}</tbody>
-      </table>
+      </table></div>
     </div>
   `);
 }

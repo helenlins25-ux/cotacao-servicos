@@ -123,6 +123,26 @@ async function handler(req, res) {
   const metodo = req.method;
 
   try {
+    // ---- Manifest PWA (permite instalar como app no celular) ----
+    if (metodo === 'GET' && path === '/manifest.webmanifest') {
+      const manifest = {
+        name: 'Stractton Cotações',
+        short_name: 'Cotações',
+        description: 'Sistema de Cotação de Serviços de Transporte - Stractton Group',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#111317',
+        theme_color: '#111317',
+        icons: [
+          { src: '/static/logo.png', sizes: '497x480', type: 'image/png', purpose: 'any' },
+          { src: '/static/logo.png', sizes: '192x192', type: 'image/png' },
+          { src: '/static/logo.png', sizes: '512x512', type: 'image/png' },
+        ],
+      };
+      res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
+      return res.end(JSON.stringify(manifest));
+    }
+
     // ---- Arquivos estaticos (logo, imagens) ----
     if (metodo === 'GET' && path.startsWith('/static/')) {
       const nome = path.replace('/static/', '').replace(/\.\./g, ''); // evita path traversal
