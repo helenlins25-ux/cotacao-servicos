@@ -1,5 +1,27 @@
 // Funcoes que geram as paginas HTML do sistema.
 
+// Simbolo "S" estilizado (dourado/preto) inspirado na logo da Stractton Group.
+// SVG embutido = funciona em qualquer lugar sem arquivo externo.
+function logoSvg() {
+  return `<svg width="38" height="38" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="Stractton Group">
+    <defs>
+      <linearGradient id="ouro" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#f6e27a"/>
+        <stop offset="0.5" stop-color="#d4af37"/>
+        <stop offset="1" stop-color="#9a7d1e"/>
+      </linearGradient>
+      <linearGradient id="grafite" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#4b4f57"/>
+        <stop offset="1" stop-color="#15171c"/>
+      </linearGradient>
+    </defs>
+    <!-- seta superior (dourada) -->
+    <path d="M20 30 L62 30 L62 14 L86 38 L62 62 L62 46 L36 46 Z" fill="url(#ouro)"/>
+    <!-- seta inferior (grafite) -->
+    <path d="M80 70 L38 70 L38 86 L14 62 L38 38 L38 54 L64 54 Z" fill="url(#grafite)"/>
+  </svg>`;
+}
+
 function layout(title, body) {
   return `<!DOCTYPE html>
 <html lang="pt-br">
@@ -8,12 +30,24 @@ function layout(title, body) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title}</title>
   <style>
-    :root { --azul:#1d4ed8; --cinza:#64748b; --borda:#e2e8f0; --bg:#f8fafc; }
+    :root {
+      --ouro:#d4af37; --ouro-claro:#f0d87a; --preto:#111317; --grafite:#1c1f26;
+      --cinza:#64748b; --borda:#e2e8f0; --bg:#f6f7f9;
+    }
     * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; background:var(--bg); color:#0f172a; }
-    header { background:#0f172a; color:#fff; padding:16px 24px; }
-    header a { color:#cbd5e1; text-decoration:none; margin-right:16px; font-size:14px; }
-    header a:hover { color:#fff; }
+    header {
+      background: linear-gradient(135deg, var(--preto) 0%, var(--grafite) 100%);
+      color:#fff; padding:14px 24px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+      border-bottom:3px solid var(--ouro);
+    }
+    header .marca { display:flex; align-items:center; gap:12px; margin-right:12px; }
+    header .marca .nome { line-height:1.05; }
+    header .marca .nome b { font-size:18px; color:var(--ouro-claro); letter-spacing:.5px; }
+    header .marca .nome span { display:block; font-size:10px; letter-spacing:4px; color:#cbd5e1; }
+    header nav { display:flex; gap:4px; flex-wrap:wrap; }
+    header a { color:#d8dce3; text-decoration:none; font-size:14px; padding:6px 10px; border-radius:6px; }
+    header a:hover { color:#fff; background:rgba(212,175,55,.15); }
     .container { max-width:1000px; margin:24px auto; padding:0 16px; }
     h1 { font-size:22px; } h2 { font-size:18px; }
     .card { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:20px; margin-bottom:20px; }
@@ -22,8 +56,8 @@ function layout(title, body) {
     textarea { min-height:70px; resize:vertical; }
     .row { display:flex; gap:16px; flex-wrap:wrap; }
     .row > div { flex:1; min-width:180px; }
-    button, .btn { background:var(--azul); color:#fff; border:none; padding:10px 18px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; }
-    button:hover, .btn:hover { opacity:.9; }
+    button, .btn { background:var(--preto); color:var(--ouro-claro); border:1px solid var(--ouro); padding:10px 18px; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; text-decoration:none; display:inline-block; }
+    button:hover, .btn:hover { background:var(--grafite); }
     table { width:100%; border-collapse:collapse; font-size:14px; }
     th, td { text-align:left; padding:10px; border-bottom:1px solid var(--borda); }
     th { color:var(--cinza); font-size:12px; text-transform:uppercase; }
@@ -45,19 +79,26 @@ function layout(title, body) {
     .kpi.azul { border-top:3px solid #3b82f6; }
     .kpi.amar { border-top:3px solid #f59e0b; }
     .kpi.verd { border-top:3px solid #22c55e; }
-    .kpi.roxo { border-top:3px solid #8b5cf6; }
+    .kpi.roxo { border-top:3px solid var(--ouro); }
+    a { color:#b8860b; }
+    footer { text-align:center; color:var(--cinza); font-size:12px; padding:24px; }
   </style>
 </head>
 <body>
   <header>
-    <strong>📦 Cotação de Serviços</strong>
-    &nbsp;&nbsp;
-    <a href="/">Dashboard</a>
-    <a href="/cotacoes">Cotações</a>
-    <a href="/cotacoes/nova">Nova cotação</a>
-    <a href="/parceiros">Parceiros</a>
+    <div class="marca">
+      ${logoSvg()}
+      <div class="nome"><b>STRACTTON</b><span>GROUP</span></div>
+    </div>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/cotacoes">Cotações</a>
+      <a href="/cotacoes/nova">Nova cotação</a>
+      <a href="/parceiros">Parceiros</a>
+    </nav>
   </header>
   <div class="container">${body}</div>
+  <footer>Stractton Group · Sistema de Cotação de Serviços de Transporte</footer>
 </body>
 </html>`;
 }
