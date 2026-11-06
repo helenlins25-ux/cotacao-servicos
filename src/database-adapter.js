@@ -43,6 +43,7 @@ if (usandoPostgres) {
     return sql
       .replace(/SERIAL PRIMARY KEY/gi, 'INTEGER PRIMARY KEY AUTOINCREMENT')
       .replace(/TIMESTAMPTZ/gi, 'TEXT')
+      .replace(/\bDATE\b/gi, 'TEXT')
       .replace(/NUMERIC/gi, 'REAL')
       .replace(/DEFAULT now\(\)/gi, "DEFAULT (datetime('now'))")
       .replace(/now\(\)/gi, "datetime('now')")
@@ -66,6 +67,15 @@ if (usandoPostgres) {
     const comTipos = traduzirTipos(sql);
     const { novoSql: traduzido, novosParams: params } = converterPlaceholders(comTipos, paramsOrig);
     const ehSelectOuReturning = /^\s*select/i.test(traduzido) || /returning/i.test(traduzido);
+    // ALTER TABLE ... ADD COLUMN IF NOT EXISTS: SQLite nao suporta "IF NOT EXISTS"
+    // aqui. Removemos e ignoramos erro de coluna duplicada (migracao idempotente).
+    if (/^\s*alter\s+table/i.test(traduzido)) {
+      const semIfNotExists = traduzido.replace(/ADD COLUMN IF NOT EXISTS/gi, 'ADD COLUMN');
+      try { sdb.exec(semIfNotExists); } catch (e) {
+        if (!/duplicate column/i.test(e.message)) throw e; // ignora "ja existe"
+      }
+      return { rows: [] };
+    }
     // multiplos statements (CREATE TABLE ...; CREATE TABLE ...;)
     if (/;\s*create/i.test(traduzido) || /^\s*create/i.test(traduzido)) {
       sdb.exec(traduzido.replace(/returning \*/gi, ''));

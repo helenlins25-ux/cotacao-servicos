@@ -49,14 +49,21 @@ function parsePrazo(valor) {
 async function enviarCotacaoAoParceiro(req, c, parceiro, tokenConvite) {
   const link = `${baseUrlDe(req)}/responder/${tokenConvite}`;
   const prazoFmt = new Date(c.prazo_resposta).toLocaleString('pt-br', { timeZone: 'America/Sao_Paulo' });
+  const fmtDia = (d) => { if (!d) return null; const s = String(d).slice(0,10); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : s; };
+  const coletaFmt = fmtDia(c.data_coleta);
+  const entregaFmt = c.data_entrega ? fmtDia(c.data_entrega) : 'A combinar';
   const corpoHtml = `
     <p>Olá ${parceiro.nome},</p>
     <p>Temos uma solicitação de cotação de transporte:</p>
     <ul>
       <li><strong>Origem → Destino:</strong> ${c.origem} → ${c.destino}</li>
+      ${c.produto ? `<li><strong>Produto:</strong> ${c.produto}</li>` : ''}
       <li><strong>Peso da carga:</strong> ${c.peso_kg} kg</li>
+      ${c.volume ? `<li><strong>Volume:</strong> ${c.volume}</li>` : ''}
       <li><strong>Valor da mercadoria:</strong> R$ ${c.valor_mercadoria}</li>
       <li><strong>Tipo de veículo:</strong> ${c.tipo_veiculo}</li>
+      ${coletaFmt ? `<li><strong>Data da coleta:</strong> ${coletaFmt}</li>` : ''}
+      <li><strong>Data da entrega:</strong> ${entregaFmt}</li>
     </ul>
     <p><strong>Responda até ${prazoFmt}</strong> clicando no link:</p>
     <p><a href="${link}">${link}</a></p>`;
@@ -65,7 +72,7 @@ async function enviarCotacaoAoParceiro(req, c, parceiro, tokenConvite) {
       to: parceiro.email,
       subject: `Solicitação de cotação #${c.id}: ${c.origem} → ${c.destino}`,
       html: corpoHtml,
-      text: `Cotacao #${c.id}\nTrajeto: ${c.origem} -> ${c.destino}\nPeso: ${c.peso_kg} kg\nValor mercadoria: R$ ${c.valor_mercadoria}\nVeiculo: ${c.tipo_veiculo}\nResponda ate ${prazoFmt}:\n${link}`,
+      text: `Cotacao #${c.id}\nTrajeto: ${c.origem} -> ${c.destino}${c.produto ? `\nProduto: ${c.produto}` : ''}\nPeso: ${c.peso_kg} kg${c.volume ? `\nVolume: ${c.volume}` : ''}\nValor mercadoria: R$ ${c.valor_mercadoria}\nVeiculo: ${c.tipo_veiculo}${coletaFmt ? `\nColeta: ${coletaFmt}` : ''}\nEntrega: ${entregaFmt}\nResponda ate ${prazoFmt}:\n${link}`,
     });
     return true;
   } catch (errMail) {
@@ -183,9 +190,13 @@ async function handler(req, res) {
         origem: body.origem,
         destino: body.destino,
         peso_kg: Number(body.peso_kg),
+        produto: body.produto,
+        volume: body.volume,
         valor_mercadoria: Number(body.valor_mercadoria),
         tipo_veiculo: body.tipo_veiculo,
         comercial: body.comercial,
+        data_coleta: body.data_coleta || null,
+        data_entrega: body.data_entrega || null,
         observacoes: body.observacoes,
         prazo_resposta: parsePrazo(body.prazo_resposta),
       });

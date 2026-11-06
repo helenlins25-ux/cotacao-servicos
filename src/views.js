@@ -97,6 +97,15 @@ const fmtData = (iso) => {
     hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
   });
 };
+// Formata uma data (so dia) tipo "2026-11-20" como "20/11/2026".
+const fmtDataSimples = (d) => {
+  if (!d) return '-';
+  const s = typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : s;
+};
+const fmtEntrega = (d) => (d ? fmtDataSimples(d) : 'A combinar');
+
 const rotuloStatus = {
   aberta: 'Aberta',
   em_andamento: 'Em andamento',
@@ -214,13 +223,20 @@ export function paginaNovaCotacao(parceiros, comerciais) {
           <div><label>Origem</label><input name="origem" required placeholder="São Paulo - SP"></div>
           <div><label>Destino</label><input name="destino" required placeholder="Rio de Janeiro - RJ"></div>
         </div>
+        <label>Produto</label>
+        <input name="produto" placeholder="Ex: Eletrônicos, alimentos, peças...">
         <div class="row">
           <div><label>Peso da carga (kg)</label><input name="peso_kg" type="number" step="0.01" min="0" required placeholder="1200"></div>
+          <div><label>Volume</label><input name="volume" placeholder="Ex: 15 m³ ou 20 volumes"></div>
           <div><label>Valor da mercadoria (R$)</label><input name="valor_mercadoria" type="number" step="0.01" min="0" required placeholder="50000"></div>
         </div>
         <div class="row">
           <div><label>Tipo de veículo</label><select name="tipo_veiculo" required>${optsVeic}</select></div>
           <div><label>Comercial responsável</label><select name="comercial" required><option value="">Selecione...</option>${optsCom}</select></div>
+        </div>
+        <div class="row">
+          <div><label>Data da coleta</label><input name="data_coleta" type="date"></div>
+          <div><label>Data da entrega <span class="muted">(vazio = a combinar)</span></label><input name="data_entrega" type="date"></div>
         </div>
         <div class="row">
           <div><label>Prazo para resposta</label><input name="prazo_resposta" type="datetime-local" required></div>
@@ -325,12 +341,18 @@ export function paginaDetalheCotacao(c, convites, info) {
     <div class="card">
       <div class="row">
         <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
+        <div><label>Produto</label>${c.produto || '—'}</div>
         <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
         <div><label>Comercial responsável</label>${c.comercial || '—'}</div>
       </div>
       <div class="row">
         <div><label>Peso da carga</label>${c.peso_kg} kg</div>
+        <div><label>Volume</label>${c.volume || '—'}</div>
         <div><label>Valor da mercadoria</label>${fmtMoeda(c.valor_mercadoria)}</div>
+      </div>
+      <div class="row">
+        <div><label>Data da coleta</label>${fmtDataSimples(c.data_coleta)}</div>
+        <div><label>Data da entrega</label>${fmtEntrega(c.data_entrega)}</div>
         <div><label>Prazo para resposta</label>${fmtData(c.prazo_resposta)}</div>
       </div>
       ${c.observacoes ? `<label>Observações</label><div class="muted">${c.observacoes}</div>` : ''}
@@ -355,11 +377,17 @@ export function paginaRespostaParceiro(c, convite, expirada) {
       <p>Olá <strong>${convite.nome}</strong>, você recebeu uma solicitação de cotação:</p>
       <div class="row">
         <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
+        <div><label>Produto</label>${c.produto || '—'}</div>
         <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
       </div>
       <div class="row">
         <div><label>Peso da carga</label>${c.peso_kg} kg</div>
+        <div><label>Volume</label>${c.volume || '—'}</div>
         <div><label>Valor da mercadoria</label>${fmtMoeda(c.valor_mercadoria)}</div>
+      </div>
+      <div class="row">
+        <div><label>Data da coleta</label>${fmtDataSimples(c.data_coleta)}</div>
+        <div><label>Data da entrega</label>${fmtEntrega(c.data_entrega)}</div>
         <div><label>Responder até</label>${fmtData(c.prazo_resposta)}</div>
       </div>
       ${c.observacoes ? `<label>Observações</label><div class="muted">${c.observacoes}</div>` : ''}

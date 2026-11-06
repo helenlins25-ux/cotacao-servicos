@@ -18,9 +18,13 @@ export async function inicializarBanco() {
       origem             TEXT NOT NULL,
       destino            TEXT NOT NULL,
       peso_kg            NUMERIC NOT NULL,
+      produto            TEXT,
+      volume             TEXT,
       valor_mercadoria   NUMERIC NOT NULL,
       tipo_veiculo       TEXT NOT NULL,
       comercial          TEXT NOT NULL,
+      data_coleta        DATE,
+      data_entrega       DATE,
       observacoes        TEXT,
       prazo_resposta     TIMESTAMPTZ NOT NULL,
       parceiro_vencedor  INTEGER REFERENCES parceiros(id),
@@ -30,6 +34,11 @@ export async function inicializarBanco() {
       criado_em          TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Migracao idempotente: adiciona as colunas novas em bancos que ja existiam.
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS produto TEXT`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS volume TEXT`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS data_coleta DATE`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS data_entrega DATE`);
   await query(`
     CREATE TABLE IF NOT EXISTS convites (
       id             SERIAL PRIMARY KEY,
@@ -64,9 +73,10 @@ export const cotacoes = {
   obter: async (id) => (await query('SELECT * FROM cotacoes WHERE id = $1', [Number(id)])).rows[0],
   criar: async (d) =>
     (await query(
-      `INSERT INTO cotacoes (origem, destino, peso_kg, valor_mercadoria, tipo_veiculo, comercial, observacoes, prazo_resposta)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [d.origem, d.destino, d.peso_kg, d.valor_mercadoria, d.tipo_veiculo, d.comercial, d.observacoes || null, d.prazo_resposta]
+      `INSERT INTO cotacoes (origem, destino, peso_kg, produto, volume, valor_mercadoria, tipo_veiculo, comercial, data_coleta, data_entrega, observacoes, prazo_resposta)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [d.origem, d.destino, d.peso_kg, d.produto || null, d.volume || null, d.valor_mercadoria, d.tipo_veiculo, d.comercial,
+       d.data_coleta || null, d.data_entrega || null, d.observacoes || null, d.prazo_resposta]
     )).rows[0],
   fechar: async (id, { parceiro_vencedor, valor_fechado, comissao_variavel }) =>
     (await query(
