@@ -102,7 +102,15 @@ function enviarViaSmtp({ to, subject, html, text }) {
     socket.on('data', onData);
     socket.on('error', reject);
     socket.on('timeout', () => { socket.destroy(); reject(new Error('SMTP timeout')); });
-    socket.setTimeout(15000);
+    socket.setTimeout(12000);
+
+    // timeout global: se nada resolver em 15s, desiste (evita travar a requisicao)
+    const prazoGlobal = setTimeout(() => {
+      try { socket.destroy(); } catch {}
+      reject(new Error('SMTP timeout global (servidor inacessivel)'));
+    }, 15000);
+    const limpar = () => clearTimeout(prazoGlobal);
+    socket.on('close', limpar);
     // a primeira acao (EHLO) sera disparada ao receber a saudacao 220 inicial
     // mas como o primeiro onData dispara proximo(), nao enviamos nada aqui.
   });

@@ -162,12 +162,19 @@ async function handler(req, res) {
           </ul>
           <p><strong>Responda até ${prazoFmt}</strong> clicando no link:</p>
           <p><a href="${link}">${link}</a></p>`;
-        await enviarEmail({
-          to: parceiro.email,
-          subject: `Solicitação de cotação #${c.id}: ${c.origem} → ${c.destino}`,
-          html: corpoHtml,
-          text: `Nova cotacao #${c.id}\nTrajeto: ${c.origem} -> ${c.destino}\nPeso: ${c.peso_kg} kg\nValor mercadoria: R$ ${c.valor_mercadoria}\nVeiculo: ${c.tipo_veiculo}\nResponda ate ${prazoFmt}:\n${link}`,
-        });
+        // O envio de e-mail NAO pode derrubar a criacao da cotacao.
+        // Se falhar (ex: SMTP bloqueado), registramos o erro e seguimos;
+        // o link fica sempre disponivel no painel da cotacao.
+        try {
+          await enviarEmail({
+            to: parceiro.email,
+            subject: `Solicitação de cotação #${c.id}: ${c.origem} → ${c.destino}`,
+            html: corpoHtml,
+            text: `Nova cotacao #${c.id}\nTrajeto: ${c.origem} -> ${c.destino}\nPeso: ${c.peso_kg} kg\nValor mercadoria: R$ ${c.valor_mercadoria}\nVeiculo: ${c.tipo_veiculo}\nResponda ate ${prazoFmt}:\n${link}`,
+          });
+        } catch (errMail) {
+          console.error(`[EMAIL] Falha ao enviar para ${parceiro.email} (cotacao #${c.id}):`, errMail.message);
+        }
       }
       return redirect(res, `/cotacoes/${c.id}`);
     }
