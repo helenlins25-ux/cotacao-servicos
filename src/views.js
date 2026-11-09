@@ -1,16 +1,26 @@
 // Funcoes que geram as paginas HTML do sistema.
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { ETAPAS, nomeEtapa, ORIGENS, TIPOS_CONTATO, statusFollowUp } from './leads.js';
+
+// Escapa texto digitado por usuarios antes de colocar no HTML (evita injecao de HTML/script).
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 // Logo oficial da Stractton Group (imagem servida de /static/logo.png).
 function logoSvg() {
   return `<img src="/static/logo.png" alt="Stractton Group" height="46" style="display:block;border-radius:6px;" />`;
 }
 
-// externo=true -> pagina vista pelo PARCEIRO (sem menu interno de navegacao).
-// usuario = { nome, perfil } do logado (para mostrar menu Usuarios so ao ADM e botao Sair).
-let _usuarioAtual = null;
-export function definirUsuarioAtual(u) { _usuarioAtual = u; }
+// Contexto POR REQUISICAO (usuario logado + modulo atual). Usa AsyncLocalStorage para que
+// requisicoes simultaneas nao misturem o usuario/menu de pessoas diferentes.
+export const contexto = new AsyncLocalStorage();
+export function definirUsuarioAtual(u) { const s = contexto.getStore(); if (s) s.usuario = u; }
+export function definirModulo(m) { const s = contexto.getStore(); if (s) s.modulo = m; }
 
+// externo=true -> pagina vista pelo PARCEIRO (sem menu interno de navegacao).
 function layout(title, body, externo = false) {
+  const ctx = contexto.getStore() || {};
+  const _usuarioAtual = ctx.usuario || null;
+  const modulo = ctx.modulo || 'cotacao';
   return `<!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -23,7 +33,7 @@ function layout(title, body, externo = false) {
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/static/logo.png" />
   <link rel="icon" href="/static/logo.png" />
-  <title>${title}</title>
+  <title>${esc(title)}</title>
   <style>
     :root {
       --ouro:#d4af37; --ouro-claro:#f0d87a; --preto:#111317; --grafite:#1c1f26;
@@ -83,6 +93,24 @@ function layout(title, body, externo = false) {
     .kpi.roxo { border-top:3px solid var(--ouro); }
     a { color:#b8860b; }
     footer { text-align:center; color:var(--cinza); font-size:12px; padding:24px; }
+    /* seletor de modulos (Cotacao | Leads) */
+    .modulos { display:flex; gap:4px; background:rgba(255,255,255,.07); padding:4px; border-radius:10px; }
+    header .modulos a { font-weight:700; padding:7px 14px; }
+    header .modulos a.ativo { background:var(--ouro); color:#111317; }
+    /* etapas do funil de leads */
+    .tag.etapa-novo { background:#e0e7ff; color:#3730a3; }
+    .tag.etapa-em_contato { background:#dbeafe; color:#1e40af; }
+    .tag.etapa-proposta { background:#fef3c7; color:#92400e; }
+    .tag.etapa-negociacao { background:#fde68a; color:#78350f; }
+    .tag.etapa-ganho { background:#dcfce7; color:#166534; }
+    .tag.etapa-perdido { background:#fee2e2; color:#991b1b; }
+    .atrasado { color:#b91c1c; font-weight:700; }
+    .historico { list-style:none; padding:0; margin:0; }
+    .historico li { border-left:3px solid var(--ouro); padding:6px 0 6px 12px; margin-bottom:10px; }
+    @media (max-width: 640px) {
+      .modulos { width:100%; }
+      header .modulos a { flex:1; text-align:center; }
+    }
     /* na impressao, esconde elementos de navegacao/botoes */
     @media print {
       header, footer, .no-print { display:none !important; }
@@ -121,14 +149,25 @@ function layout(title, body, externo = false) {
     <div class="marca">
       ${logoSvg()}
     </div>
-    ${externo ? '' : `<nav>
+    ${externo ? '' : `
+    <div class="modulos">
+      <a href="/" class="${modulo === 'cotacao' ? 'ativo' : ''}">📦 Cotação</a>
+      <a href="/leads/painel" class="${modulo === 'leads' ? 'ativo' : ''}">🎯 Leads</a>
+    </div>
+    <nav>
+      ${modulo === 'leads' ? `
+      <a href="/leads/painel">Painel</a>
+      <a href="/leads">Leads</a>
+      <a href="/leads/novo">Novo lead</a>
+      ` : `
       <a href="/">Dashboard</a>
       <a href="/cotacoes">Cotações</a>
       <a href="/cotacoes/nova">Nova cotação</a>
       <a href="/financeiro">Financeiro</a>
       <a href="/parceiros">Parceiros</a>
+      `}
       ${_usuarioAtual && _usuarioAtual.perfil === 'adm' ? '<a href="/usuarios">Usuários</a>' : ''}
-      ${_usuarioAtual ? `<a href="/logout" style="margin-left:auto;background:rgba(255,255,255,.08)">Sair (${_usuarioAtual.nome.split(' ')[0]})</a>` : ''}
+      ${_usuarioAtual ? `<a href="/logout" style="margin-left:auto;background:rgba(255,255,255,.08)">Sair (${esc(_usuarioAtual.nome.split(' ')[0])})</a>` : ''}
     </nav>`}
   </header>
   <div class="container">${body}</div>
@@ -246,12 +285,12 @@ export function paginaDashboard(d) {
 export function paginaParceiros(parceiros, msg) {
   const linhas = parceiros.map(p => `
     <tr>
-      <td>${p.nome}</td>
-      <td>${p.email}</td>
+      <td>${esc(p.nome)}</td>
+      <td>${esc(p.email)}</td>
       <td class="muted">${fmtData(p.criado_em)}</td>
       <td style="text-align:right">
         <form method="post" action="/parceiros/${p.id}/excluir" style="margin:0"
-              onsubmit="return confirm('Excluir o parceiro ${String(p.nome).replace(/'/g, "\\'")}?');">
+              onsubmit="return confirm('Excluir o parceiro ${esc(String(p.nome).replace(/'/g, "\\'"))}?');">
           <button type="submit" style="background:#fff;color:#b91c1c;border-color:#fca5a5;padding:5px 12px;font-size:13px">🗑️ Excluir</button>
         </form>
       </td>
@@ -283,7 +322,7 @@ export function paginaParceiros(parceiros, msg) {
 // ---------------- NOVA COTACAO ----------------
 export function paginaNovaCotacao(parceiros, comerciais) {
   const checks = parceiros.map(p => `
-    <label class="check"><input type="checkbox" name="parceiros" value="${p.id}"> ${p.nome} <span class="muted">(${p.email})</span></label>
+    <label class="check"><input type="checkbox" name="parceiros" value="${p.id}"> ${esc(p.nome)} <span class="muted">(${esc(p.email)})</span></label>
   `).join('') || '<p class="muted">Nenhum parceiro cadastrado. <a href="/parceiros">Cadastre um parceiro</a> antes de criar a cotação.</p>';
 
   const veiculos = ['Fiorino', 'VUC', 'Van', 'Caminhão 3/4', 'Caminhão Toco', 'Caminhão Truck', 'Carreta', 'Bitrem'];
@@ -331,14 +370,14 @@ export function paginaNovaCotacao(parceiros, comerciais) {
 export function paginaListaCotacoes(cotacoes) {
   const veiculoCel = (c) => {
     if (c.status !== 'fechada') return '<span class="muted">—</span>';
-    if (c.veiculo_placa) return `<span class="tag fechada">🚚 ${c.veiculo_placa}</span>`;
+    if (c.veiculo_placa) return `<span class="tag fechada">🚚 ${esc(c.veiculo_placa)}</span>`;
     return '<span class="tag em_andamento">⏳ Aguardando</span>';
   };
   const linhas = cotacoes.map(c => `
     <tr>
       <td><a href="/cotacoes/${c.id}">#${c.id}</a></td>
-      <td>${c.origem} → ${c.destino}</td>
-      <td>${c.comercial || '—'}</td>
+      <td>${esc(c.origem)} → ${esc(c.destino)}</td>
+      <td>${esc(c.comercial) || '—'}</td>
       <td>${c.respondidas}/${c.convidados}</td>
       <td>${fmtData(c.prazo_resposta)}</td>
       <td><span class="tag ${c.status}">${rotuloStatus[c.status] || c.status}</span></td>
@@ -374,17 +413,17 @@ export function paginaDetalheCotacao(c, convites, info) {
             <button type="submit" style="padding:5px 10px;font-size:13px">🔄 Reenviar</button>
           </form>
           <form method="post" action="/cotacoes/${c.id}/convites/${v.id}/cancelar" style="margin:0"
-                onsubmit="return confirm('Cancelar o convite de ${String(v.nome).replace(/'/g, "\\'")}?');">
+                onsubmit="return confirm('Cancelar o convite de ${esc(String(v.nome).replace(/'/g, "\\'"))}?');">
             <button type="submit" style="background:#fff;color:#b91c1c;border-color:#fca5a5;padding:5px 10px;font-size:13px">❌ Cancelar</button>
           </form>
         </div>`;
     }
     return `
     <tr${ehVencedor ? ' style="background:#f0fdf4"' : ''}>
-      <td>${v.nome} ${ehVencedor ? '🏆' : ''}<br><span class="muted">${v.email}</span></td>
+      <td>${esc(v.nome)} ${ehVencedor ? '🏆' : ''}<br><span class="muted">${esc(v.email)}</span></td>
       <td>${v.respondido_em ? fmtMoeda(v.valor_cotado) : '<span class="muted">—</span>'}</td>
-      <td>${v.prazo_entrega || '<span class="muted">—</span>'}</td>
-      <td>${v.comentario || '<span class="muted">—</span>'}</td>
+      <td>${esc(v.prazo_entrega) || '<span class="muted">—</span>'}</td>
+      <td>${esc(v.comentario) || '<span class="muted">—</span>'}</td>
       <td>${v.respondido_em ? '✅ ' + fmtData(v.respondido_em) : '<span class="muted">aguardando</span>'}</td>
       <td style="text-align:right">${acoes}</td>
     </tr>`;
@@ -398,7 +437,7 @@ export function paginaDetalheCotacao(c, convites, info) {
     <div class="card">
       <h2>💰 Fechamento (interno)</h2>
       <div class="row">
-        <div><label>Vencedor (menor valor)</label>🏆 ${vencedorNome || '—'}</div>
+        <div><label>Vencedor (menor valor)</label>🏆 ${esc(vencedorNome) || '—'}</div>
         <div><label>Valor do frete fechado</label>${fmtMoeda(c.valor_fechado)}</div>
       </div>
       <div class="row">
@@ -429,9 +468,9 @@ export function paginaDetalheCotacao(c, convites, info) {
       <h2>🚚 Dados do veículo da viagem</h2>
       ${c.veiculo_preenchido_em ? `
         <div class="row">
-          <div><label>Placa</label>${c.veiculo_placa || '—'}</div>
-          <div><label>Motorista</label>${c.motorista_nome || '—'}</div>
-          <div><label>Telefone</label>${c.motorista_telefone || '—'}</div>
+          <div><label>Placa</label>${esc(c.veiculo_placa) || '—'}</div>
+          <div><label>Motorista</label>${esc(c.motorista_nome) || '—'}</div>
+          <div><label>Telefone</label>${esc(c.motorista_telefone) || '—'}</div>
         </div>
         <p class="muted">Preenchido pelo parceiro vencedor em ${fmtData(c.veiculo_preenchido_em)}.</p>
         <hr style="border:none;border-top:1px solid var(--borda);margin:16px 0">
@@ -453,14 +492,14 @@ export function paginaDetalheCotacao(c, convites, info) {
     ${aviso ? `<div class="${aviso.tipo}">${aviso.texto}</div><br>` : ''}
     <div class="card">
       <div class="row">
-        <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
-        <div><label>Produto</label>${c.produto || '—'}</div>
-        <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
-        <div><label>Comercial responsável</label>${c.comercial || '—'}</div>
+        <div><label>Trajeto</label>${esc(c.origem)} → ${esc(c.destino)}</div>
+        <div><label>Produto</label>${esc(c.produto) || '—'}</div>
+        <div><label>Tipo de veículo</label>${esc(c.tipo_veiculo)}</div>
+        <div><label>Comercial responsável</label>${esc(c.comercial) || '—'}</div>
       </div>
       <div class="row">
         <div><label>Peso da carga</label>${c.peso_kg} kg</div>
-        <div><label>Volume</label>${c.volume || '—'}</div>
+        <div><label>Volume</label>${esc(c.volume) || '—'}</div>
         <div><label>Valor da mercadoria</label>${fmtMoeda(c.valor_mercadoria)}</div>
       </div>
       <div class="row">
@@ -468,7 +507,7 @@ export function paginaDetalheCotacao(c, convites, info) {
         <div><label>Data da entrega</label>${fmtEntrega(c.data_entrega)}</div>
         <div><label>Prazo para resposta</label>${fmtData(c.prazo_resposta)}</div>
       </div>
-      ${c.observacoes ? `<label>Observações</label><div class="muted">${c.observacoes}</div>` : ''}
+      ${c.observacoes ? `<label>Observações</label><div class="muted">${esc(c.observacoes)}</div>` : ''}
     </div>
     ${blocoFechamento}
     <div class="card">
@@ -531,7 +570,7 @@ export function paginaFinanceiro(fin, msg) {
     return `
     <tr>
       <td><a href="/cotacoes/${c.id}">#${c.id}</a></td>
-      <td>${c.origem} → ${c.destino}</td>
+      <td>${esc(c.origem)} → ${esc(c.destino)}</td>
       <td>${c.parceiroNome}</td>
       <td>${fmtMoeda(c.faturamento)}<br>${recebCel}</td>
       <td>${bonifCel}</td>
@@ -560,6 +599,225 @@ export function paginaFinanceiro(fin, msg) {
   `);
 }
 
+// ======================= MODULO LEADS =======================
+const pct = (n) => `${Number(n || 0).toFixed(1).replace('.', ',')}%`;
+const tagEtapa = (id) => `<span class="tag etapa-${esc(id)}">${esc(nomeEtapa(id))}</span>`;
+const optsEtapa = (sel) => ETAPAS.map((e) => `<option value="${e.id}" ${e.id === sel ? 'selected' : ''}>${e.nome}</option>`).join('');
+
+// Celula "proximo contato" destacando atrasos
+const celProximo = (l, hoje) => {
+  const st = statusFollowUp(l, hoje);
+  const txt = l.proximo_contato ? fmtDataSimples(l.proximo_contato) : '—';
+  if (st === 'atrasado') return `<span class="atrasado">⚠️ ${txt}</span>`;
+  if (st === 'hoje') return `<strong>📞 Hoje</strong>`;
+  return txt;
+};
+
+export function paginaLeadsPainel(p) {
+  const kpiEtapas = ETAPAS.map((e) =>
+    `<div class="kpi"><div class="n">${p.porEtapa[e.id] || 0}</div><div class="l">${e.nome}</div></div>`).join('');
+
+  const tabelaFollow = (lista, vazio) => lista.length ? `
+    <div class="tabela-wrap"><table>
+      <thead><tr><th>Lead</th><th>Comercial</th><th>Etapa</th><th>Próximo contato</th></tr></thead>
+      <tbody>${lista.map((l) => `
+        <tr>
+          <td><a href="/leads/${l.id}">${esc(l.empresa)}</a><br><span class="muted">${esc(l.contato || '')}</span></td>
+          <td>${esc(l.comercial)}</td>
+          <td>${tagEtapa(l.etapa)}</td>
+          <td>${celProximo(l, p.hoje)}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>` : `<p class="muted">${vazio}</p>`;
+
+  const linhasCom = Object.entries(p.porComercial).map(([nome, m]) => `
+    <tr>
+      <td><strong>${esc(nome)}</strong></td><td>${m.total}</td><td>${m.emAberto}</td>
+      <td>${m.ganhos}</td><td>${m.perdidos}</td><td>${pct(m.conversao)}</td>
+    </tr>`).join('');
+
+  return layout('Painel de Leads', `
+    <h1>🎯 Painel de Leads</h1>
+    <div class="kpis">
+      <div class="kpi azul"><div class="n">${p.total}</div><div class="l">Total de leads</div></div>
+      <div class="kpi amar"><div class="n">${p.emAberto}</div><div class="l">Em aberto</div></div>
+      <div class="kpi verd"><div class="n">${p.ganhos}</div><div class="l">Ganhos</div></div>
+      <div class="kpi roxo"><div class="n">${pct(p.conversao)}</div><div class="l">Conversão (ganhos ÷ total)</div></div>
+    </div>
+    <br>
+    <div class="card">
+      <h2>Funil de vendas</h2>
+      <div class="kpis">${kpiEtapas}</div>
+    </div>
+    <div class="card">
+      <h2>⚠️ Follow-ups atrasados (${p.atrasados.length})</h2>
+      ${tabelaFollow(p.atrasados, 'Nenhum contato atrasado. 👏')}
+    </div>
+    <div class="card">
+      <h2>📞 Para contatar hoje (${p.paraHoje.length})</h2>
+      ${tabelaFollow(p.paraHoje, 'Nenhum contato agendado para hoje.')}
+    </div>
+    <div class="card">
+      <h2>Desempenho por comercial</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Comercial</th><th>Leads</th><th>Em aberto</th><th>Ganhos</th><th>Perdidos</th><th>Conversão</th></tr></thead>
+        <tbody>${linhasCom}</tbody>
+      </table></div>
+    </div>
+    <div class="card"><a class="btn" href="/leads/novo">+ Novo lead</a> &nbsp;<a class="btn" style="background:#475569" href="/leads">Ver todos os leads</a></div>
+  `);
+}
+
+export function paginaLeadsLista(lista, filtros, ctx) {
+  const { comerciais, hoje, msg } = ctx;
+  const optsCom = ['<option value="">Todos</option>']
+    .concat(comerciais.map((c) => `<option value="${esc(c)}" ${filtros.comercial === c ? 'selected' : ''}>${esc(c)}</option>`)).join('');
+  const optsEt = ['<option value="">Todas</option>']
+    .concat(ETAPAS.map((e) => `<option value="${e.id}" ${filtros.etapa === e.id ? 'selected' : ''}>${e.nome}</option>`)).join('');
+
+  const linhas = lista.map((l) => `
+    <tr>
+      <td><a href="/leads/${l.id}">#${l.id}</a></td>
+      <td><strong>${esc(l.empresa)}</strong><br><span class="muted">${esc(l.contato || '')}</span></td>
+      <td>${esc(l.telefone || '—')}</td>
+      <td>${esc(l.origem || '—')}</td>
+      <td>${esc(l.comercial)}</td>
+      <td>${tagEtapa(l.etapa)}</td>
+      <td>${celProximo(l, hoje)}</td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">Nenhum lead encontrado.</td></tr>';
+
+  return layout('Leads', `
+    <h1>Leads</h1>
+    ${msg ? `<div class="ok">${esc(msg)}</div><br>` : ''}
+    <div class="card">
+      <form method="get" action="/leads">
+        <div class="row">
+          <div><label>Buscar</label><input name="q" value="${esc(filtros.q || '')}" placeholder="Empresa, contato, telefone ou e-mail"></div>
+          <div><label>Etapa</label><select name="etapa">${optsEt}</select></div>
+          <div><label>Comercial</label><select name="comercial">${optsCom}</select></div>
+        </div>
+        <br><button type="submit">Filtrar</button> &nbsp;<a class="btn" style="background:#475569" href="/leads/novo">+ Novo lead</a>
+      </form>
+    </div>
+    <div class="card">
+      <p class="muted">${lista.length} lead(s)</p>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>#</th><th>Lead</th><th>Telefone</th><th>Origem</th><th>Comercial</th><th>Etapa</th><th>Próximo contato</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table></div>
+    </div>
+  `);
+}
+
+// Campos do lead (usados no cadastro e na edicao)
+function camposLead(l, comerciais) {
+  const v = (k) => esc(l?.[k] ?? '');
+  const optsCom = ['<option value="">Selecione...</option>']
+    .concat(comerciais.map((c) => `<option value="${esc(c)}" ${l?.comercial === c ? 'selected' : ''}>${esc(c)}</option>`)).join('');
+  const optsOri = ['<option value="">Selecione...</option>']
+    .concat(ORIGENS.map((o) => `<option value="${esc(o)}" ${l?.origem === o ? 'selected' : ''}>${esc(o)}</option>`)).join('');
+  return `
+    <div class="row">
+      <div><label>Empresa *</label><input name="empresa" required value="${v('empresa')}" placeholder="Nome da empresa"></div>
+      <div><label>Nome do contato</label><input name="contato" value="${v('contato')}" placeholder="Com quem falar"></div>
+    </div>
+    <div class="row">
+      <div><label>Telefone</label><input name="telefone" value="${v('telefone')}" placeholder="(00) 00000-0000"></div>
+      <div><label>E-mail</label><input name="email" type="email" value="${v('email')}" placeholder="contato@empresa.com"></div>
+    </div>
+    <div class="row">
+      <div><label>Origem do lead</label><select name="origem">${optsOri}</select></div>
+      <div><label>Comercial responsável *</label><select name="comercial" required>${optsCom}</select></div>
+    </div>
+    <div class="row">
+      <div><label>Etapa</label><select name="etapa">${optsEtapa(l?.etapa || 'novo')}</select></div>
+      <div><label>Próximo contato</label><input name="proximo_contato" type="date" value="${esc(paraInputData(l?.proximo_contato))}"></div>
+    </div>
+    <label>Observações</label>
+    <textarea name="observacoes" placeholder="Informações importantes sobre o lead...">${v('observacoes')}</textarea>`;
+}
+
+export function paginaLeadNovo(comerciais, erro, dados) {
+  return layout('Novo lead', `
+    <h1>Novo lead</h1>
+    ${erro ? `<div class="warn">${esc(erro)}</div><br>` : ''}
+    <div class="card">
+      <form method="post" action="/leads">
+        ${camposLead(dados, comerciais)}
+        <br><button type="submit">Salvar lead</button>
+      </form>
+    </div>
+  `);
+}
+
+export function paginaLeadDetalhe(l, contatos, ctx) {
+  const { comerciais, hoje, aviso, erro } = ctx;
+  const optsTipo = TIPOS_CONTATO.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+
+  const historico = contatos.length ? `<ul class="historico">${contatos.map((c) => `
+    <li>
+      <strong>${esc(c.tipo)}</strong> — ${fmtData(c.criado_em)} ${c.autor ? `<span class="muted">por ${esc(c.autor)}</span>` : ''}
+      <div style="white-space:pre-wrap">${esc(c.descricao)}</div>
+    </li>`).join('')}</ul>` : '<p class="muted">Nenhum contato registrado ainda.</p>';
+
+  return layout(`Lead — ${l.empresa}`, `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <h1 style="margin:0">${esc(l.empresa)} ${tagEtapa(l.etapa)}</h1>
+      <a class="btn" style="background:#475569" href="/leads">← Voltar à lista</a>
+    </div>
+    <br>
+    ${aviso ? `<div class="ok">${esc(aviso)}</div><br>` : ''}
+    ${erro ? `<div class="warn">${esc(erro)}</div><br>` : ''}
+    <div class="card">
+      <div class="row">
+        <div><label>Contato</label>${esc(l.contato || '—')}</div>
+        <div><label>Telefone</label>${esc(l.telefone || '—')}</div>
+        <div><label>E-mail</label>${esc(l.email || '—')}</div>
+      </div>
+      <div class="row">
+        <div><label>Origem</label>${esc(l.origem || '—')}</div>
+        <div><label>Comercial responsável</label>${esc(l.comercial)}</div>
+        <div><label>Próximo contato</label>${celProximo(l, hoje)}</div>
+      </div>
+      ${l.observacoes ? `<label>Observações</label><div style="white-space:pre-wrap" class="muted">${esc(l.observacoes)}</div>` : ''}
+      <p class="muted" style="margin-bottom:0">Cadastrado em ${fmtData(l.criado_em)}</p>
+    </div>
+
+    <div class="card">
+      <h2>Registrar contato</h2>
+      <form method="post" action="/leads/${l.id}/contatos">
+        <div class="row">
+          <div><label>Tipo</label><select name="tipo">${optsTipo}</select></div>
+          <div><label>Mover para a etapa</label><select name="etapa">${optsEtapa(l.etapa)}</select></div>
+          <div><label>Próximo contato</label><input name="proximo_contato" type="date" value="${esc(paraInputData(l.proximo_contato))}"></div>
+        </div>
+        <label>O que foi conversado *</label>
+        <textarea name="descricao" required placeholder="Resumo da conversa, combinados, objeções..."></textarea>
+        <br><button type="submit">Salvar contato</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Histórico de contatos</h2>
+      ${historico}
+    </div>
+
+    <div class="card">
+      <details>
+        <summary style="cursor:pointer;font-weight:700">✏️ Editar dados do lead</summary>
+        <form method="post" action="/leads/${l.id}">
+          ${camposLead(l, comerciais)}
+          <br><button type="submit">Salvar alterações</button>
+        </form>
+      </details>
+      <hr style="border:none;border-top:1px solid var(--borda);margin:16px 0">
+      <form method="post" action="/leads/${l.id}/excluir" style="margin:0"
+            onsubmit="return confirm('Excluir este lead e todo o histórico de contatos?');">
+        <button type="submit" style="background:#fff;color:#b91c1c;border-color:#fca5a5">🗑️ Excluir lead</button>
+      </form>
+    </div>
+  `);
+}
+
 // ---------------- RELATORIO DA COTACAO (sem bloco financeiro) ----------------
 // Pagina para compartilhar/imprimir. NAO mostra faturamento/comissao/bonificacao.
 export function paginaRelatorio(c, convites, info) {
@@ -568,10 +826,10 @@ export function paginaRelatorio(c, convites, info) {
     const ehVencedor = c.parceiro_vencedor && v.parceiro_id === c.parceiro_vencedor;
     return `
     <tr${ehVencedor ? ' style="background:#f0fdf4"' : ''}>
-      <td>${v.nome} ${ehVencedor ? '🏆' : ''}</td>
+      <td>${esc(v.nome)} ${ehVencedor ? '🏆' : ''}</td>
       <td>${v.respondido_em ? fmtMoeda(v.valor_cotado) : '—'}</td>
-      <td>${v.prazo_entrega || '—'}</td>
-      <td>${v.comentario || '—'}</td>
+      <td>${esc(v.prazo_entrega) || '—'}</td>
+      <td>${esc(v.comentario) || '—'}</td>
       <td>${v.respondido_em ? fmtData(v.respondido_em) : 'aguardando'}</td>
     </tr>`;
   }).join('');
@@ -580,9 +838,9 @@ export function paginaRelatorio(c, convites, info) {
     <div class="card">
       <h2>🚚 Veículo e acompanhamento</h2>
       <div class="row">
-        <div><label>Placa</label>${c.veiculo_placa || '—'}</div>
-        <div><label>Motorista</label>${c.motorista_nome || '—'}</div>
-        <div><label>Telefone</label>${c.motorista_telefone || '—'}</div>
+        <div><label>Placa</label>${esc(c.veiculo_placa) || '—'}</div>
+        <div><label>Motorista</label>${esc(c.motorista_nome) || '—'}</div>
+        <div><label>Telefone</label>${esc(c.motorista_telefone) || '—'}</div>
       </div>
       <div class="row">
         <div><label>Coletou</label>${c.coletado === 'sim' ? '✅ Sim' : c.coletado === 'nao' ? '❌ Não' : '—'}</div>
@@ -600,14 +858,14 @@ export function paginaRelatorio(c, convites, info) {
     <div class="card">
       <h2>Dados da cotação</h2>
       <div class="row">
-        <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
-        <div><label>Produto</label>${c.produto || '—'}</div>
-        <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
-        <div><label>Comercial responsável</label>${c.comercial || '—'}</div>
+        <div><label>Trajeto</label>${esc(c.origem)} → ${esc(c.destino)}</div>
+        <div><label>Produto</label>${esc(c.produto) || '—'}</div>
+        <div><label>Tipo de veículo</label>${esc(c.tipo_veiculo)}</div>
+        <div><label>Comercial responsável</label>${esc(c.comercial) || '—'}</div>
       </div>
       <div class="row">
         <div><label>Peso da carga</label>${c.peso_kg} kg</div>
-        <div><label>Volume</label>${c.volume || '—'}</div>
+        <div><label>Volume</label>${esc(c.volume) || '—'}</div>
         <div><label>Valor da mercadoria</label>${fmtMoeda(c.valor_mercadoria)}</div>
       </div>
       <div class="row">
@@ -615,8 +873,8 @@ export function paginaRelatorio(c, convites, info) {
         <div><label>Data da entrega</label>${c.data_entrega ? fmtDataSimples(c.data_entrega) : 'A combinar'}</div>
         <div><label>Prazo para resposta</label>${fmtData(c.prazo_resposta)}</div>
       </div>
-      ${c.observacoes ? `<label>Observações</label><div class="muted">${c.observacoes}</div>` : ''}
-      ${vencedorNome ? `<label>Parceiro vencedor</label>🏆 ${vencedorNome} — ${fmtMoeda(c.valor_fechado)}` : ''}
+      ${c.observacoes ? `<label>Observações</label><div class="muted">${esc(c.observacoes)}</div>` : ''}
+      ${vencedorNome ? `<label>Parceiro vencedor</label>🏆 ${esc(vencedorNome)} — ${fmtMoeda(c.valor_fechado)}` : ''}
     </div>
     <div class="card">
       <h2>Respostas dos parceiros</h2>
@@ -635,15 +893,15 @@ export function paginaRespostaParceiro(c, convite, expirada) {
   const cabecalho = `
     <div class="card">
       <h1>Solicitação de cotação</h1>
-      <p>Olá <strong>${convite.nome}</strong>, você recebeu uma solicitação de cotação:</p>
+      <p>Olá <strong>${esc(convite.nome)}</strong>, você recebeu uma solicitação de cotação:</p>
       <div class="row">
-        <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
-        <div><label>Produto</label>${c.produto || '—'}</div>
-        <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
+        <div><label>Trajeto</label>${esc(c.origem)} → ${esc(c.destino)}</div>
+        <div><label>Produto</label>${esc(c.produto) || '—'}</div>
+        <div><label>Tipo de veículo</label>${esc(c.tipo_veiculo)}</div>
       </div>
       <div class="row">
         <div><label>Peso da carga</label>${c.peso_kg} kg</div>
-        <div><label>Volume</label>${c.volume || '—'}</div>
+        <div><label>Volume</label>${esc(c.volume) || '—'}</div>
         <div><label>Valor da mercadoria</label>${fmtMoeda(c.valor_mercadoria)}</div>
       </div>
       <div class="row">
@@ -651,7 +909,7 @@ export function paginaRespostaParceiro(c, convite, expirada) {
         <div><label>Data da entrega</label>${fmtEntrega(c.data_entrega)}</div>
         <div><label>Responder até</label>${fmtData(c.prazo_resposta)}</div>
       </div>
-      ${c.observacoes ? `<label>Observações</label><div class="muted">${c.observacoes}</div>` : ''}
+      ${c.observacoes ? `<label>Observações</label><div class="muted">${esc(c.observacoes)}</div>` : ''}
     </div>`;
 
   if (expirada) {
@@ -694,13 +952,13 @@ export function paginaVeiculo(c, info) {
   const cabecalho = `
     <div class="card">
       <h1>🎉 Você ganhou a cotação #${c.id}!</h1>
-      <p>Olá <strong>${info.nome}</strong>, sua proposta foi selecionada para:</p>
+      <p>Olá <strong>${esc(info.nome)}</strong>, sua proposta foi selecionada para:</p>
       <div class="row">
-        <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
-        <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
+        <div><label>Trajeto</label>${esc(c.origem)} → ${esc(c.destino)}</div>
+        <div><label>Tipo de veículo</label>${esc(c.tipo_veiculo)}</div>
       </div>
       <div class="row">
-        <div><label>Produto</label>${c.produto || '—'}</div>
+        <div><label>Produto</label>${esc(c.produto) || '—'}</div>
         <div><label>Peso da carga</label>${c.peso_kg} kg</div>
         <div><label>Data da coleta</label>${fmtDataSimples(c.data_coleta)}</div>
       </div>
@@ -728,9 +986,9 @@ export function paginaVeiculo(c, info) {
     <div class="card">
       <h2>1. Dados do veículo ✅</h2>
       <div class="row">
-        <div><label>Placa</label>${c.veiculo_placa || '—'}</div>
-        <div><label>Motorista</label>${c.motorista_nome || '—'}</div>
-        <div><label>Telefone</label>${c.motorista_telefone || '—'}</div>
+        <div><label>Placa</label>${esc(c.veiculo_placa) || '—'}</div>
+        <div><label>Motorista</label>${esc(c.motorista_nome) || '—'}</div>
+        <div><label>Telefone</label>${esc(c.motorista_telefone) || '—'}</div>
       </div>
     </div>`;
   }
@@ -802,12 +1060,12 @@ export function paginaLogin(erro) {
 export function paginaUsuarios(usuarios, msg, erro) {
   const linhas = usuarios.map(u => `
     <tr>
-      <td>${u.nome}</td>
-      <td>${u.email}</td>
+      <td>${esc(u.nome)}</td>
+      <td>${esc(u.email)}</td>
       <td><span class="tag ${u.perfil === 'adm' ? 'fechada' : 'aberta'}">${u.perfil === 'adm' ? 'Administrador' : 'Comercial'}</span></td>
       <td style="text-align:right">
         <form method="post" action="/usuarios/${u.id}/excluir" style="margin:0"
-              onsubmit="return confirm('Remover o acesso de ${String(u.nome).replace(/'/g, "\\'")}?');">
+              onsubmit="return confirm('Remover o acesso de ${esc(String(u.nome).replace(/'/g, "\\'"))}?');">
           <button type="submit" style="background:#fff;color:#b91c1c;border-color:#fca5a5;padding:5px 12px;font-size:13px">🗑️ Remover</button>
         </form>
       </td>

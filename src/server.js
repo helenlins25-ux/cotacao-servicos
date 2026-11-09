@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inicializarBanco, parceiros, cotacoes, convites, usuarios } from './db.js';
+import { inicializarBanco, parceiros, cotacoes, convites, usuarios, leads, leadContatos } from './db.js';
+import * as leadsMod from './leads.js';
 import { enviarEmail, mailMode } from './mailer.js';
 import * as negocio from './negocio.js';
 import * as views from './views.js';
@@ -150,6 +151,24 @@ async function notificarFechamentosPendentes(req) {
   } catch (e) {
     console.error('[NOTIF] Erro ao notificar fechamentos pendentes:', e.message);
   }
+}
+
+// ---- Helpers do modulo Leads ----
+function lerDadosLead(b) {
+  const t = (s) => String(s ?? '').trim();
+  const dia = t(b.proximo_contato);
+  return {
+    empresa: t(b.empresa), contato: t(b.contato), telefone: t(b.telefone), email: t(b.email),
+    origem: t(b.origem), comercial: t(b.comercial),
+    etapa: leadsMod.etapaValida(t(b.etapa)) ? t(b.etapa) : null,
+    proximo_contato: /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia : null,
+    observacoes: t(b.observacoes),
+  };
+}
+function validarLead(d) {
+  if (!d.empresa) return 'Informe o nome da empresa.';
+  if (!negocio.COMERCIAIS.includes(d.comercial)) return 'Selecione o comercial responsável.';
+  return null;
 }
 
 function html(res, body, status = 200) {
@@ -298,6 +317,7 @@ async function handler(req, res) {
     // Sessao atual (se houver)
     const sessao = auth.obterSessao(auth.lerCookie(req, 'sid'));
     views.definirUsuarioAtual(sessao ? { nome: sessao.nome, perfil: sessao.perfil, email: sessao.email } : null);
+    views.definirModulo(path.startsWith('/leads') ? 'leads' : 'cotacao');
 
     // ---- GET /login : mostra a tela de login ----
     if (metodo === 'GET' && ehLogin) {
@@ -383,6 +403,84 @@ async function handler(req, res) {
       const bonificacao_paga_em = (temBonif && body.bonif_paga === 'sim') ? (dataValida(body.bonif_paga_em) || hoje) : null;
       await cotacoes.atualizarFinanceiro(c.id, { recebido_em, bonificacao_paga_em });
       return redirect(res, '/financeiro?ok=1');
+    }
+
+    // ======== MODULO LEADS (interno: ADM + Comercial) ========
+    if (metodo === 'GET' && path === '/leads/painel') {
+      return html(res, views.paginaLeadsPainel(await leadsMod.calcularPainelLeads(TZ_OFFSET_HORAS)));
+    }
+    if (metodo === 'GET' && path === '/leads') {
+      const filtros = {
+        q: (url.searchParams.get('q') || '').trim(),
+        etapa: url.searchParams.get('etapa') || '',
+        comercial: url.searchParams.get('comercial') || '',
+      };
+      let lista = await leads.listar();
+      if (filtros.etapa) lista = lista.filter((l) => l.etapa === filtros.etapa);
+      if (filtros.comercial) lista = lista.filter((l) => l.comercial === filtros.comercial);
+      if (filtros.q) {
+        const q = filtros.q.toLowerCase();
+        lista = lista.filter((l) => [l.empresa, l.contato, l.telefone, l.email].some((x) => String(x || '').toLowerCase().includes(q)));
+      }
+      const msg = url.searchParams.get('excluido') ? 'Lead excluído com sucesso.' : null;
+      return html(res, views.paginaLeadsLista(lista, filtros, { comerciais: negocio.COMERCIAIS, hoje: leadsMod.hojeISO(TZ_OFFSET_HORAS), msg }));
+    }
+    if (metodo === 'GET' && path === '/leads/novo') {
+      return html(res, views.paginaLeadNovo(negocio.COMERCIAIS, null, null));
+    }
+    if (metodo === 'POST' && path === '/leads') {
+      const dados = lerDadosLead(await lerBody(req));
+      const erro = validarLead(dados);
+      if (erro) return html(res, views.paginaLeadNovo(negocio.COMERCIAIS, erro, dados), 400);
+      const l = await leads.criar({ ...dados, etapa: dados.etapa || 'novo' });
+      return redirect(res, `/leads/${l.id}?criado=1`);
+    }
+
+    let mLead = path.match(/^\/leads\/(\d+)$/);
+    if (mLead) {
+      const l = await leads.obter(mLead[1]);
+      if (!l) return html(res, views.paginaSimples('Não encontrado', 'Lead não encontrado. <a href="/leads">Voltar</a>'), 404);
+      const ctxLead = { comerciais: negocio.COMERCIAIS, hoje: leadsMod.hojeISO(TZ_OFFSET_HORAS) };
+
+      if (metodo === 'GET') {
+        const q = url.searchParams;
+        const aviso = q.get('criado') ? 'Lead cadastrado com sucesso!'
+          : q.get('atualizado') ? 'Dados do lead atualizados.'
+          : q.get('contato') ? 'Contato registrado.' : null;
+        return html(res, views.paginaLeadDetalhe(l, await leadContatos.porLead(l.id), { ...ctxLead, aviso }));
+      }
+      if (metodo === 'POST') { // editar dados
+        const dados = lerDadosLead(await lerBody(req));
+        const erro = validarLead(dados);
+        if (erro) return html(res, views.paginaLeadDetalhe(l, await leadContatos.porLead(l.id), { ...ctxLead, erro }), 400);
+        await leads.atualizar(l.id, { ...dados, etapa: dados.etapa || l.etapa });
+        return redirect(res, `/leads/${l.id}?atualizado=1`);
+      }
+    }
+
+    let mLeadCont = path.match(/^\/leads\/(\d+)\/contatos$/);
+    if (metodo === 'POST' && mLeadCont) {
+      const l = await leads.obter(mLeadCont[1]);
+      if (!l) return html(res, views.paginaSimples('Não encontrado', 'Lead não encontrado. <a href="/leads">Voltar</a>'), 404);
+      const b = await lerBody(req);
+      const descricao = String(b.descricao || '').trim();
+      if (!descricao) {
+        return html(res, views.paginaLeadDetalhe(l, await leadContatos.porLead(l.id),
+          { comerciais: negocio.COMERCIAIS, hoje: leadsMod.hojeISO(TZ_OFFSET_HORAS), erro: 'Descreva o que foi conversado.' }), 400);
+      }
+      const tipo = leadsMod.TIPOS_CONTATO.includes(b.tipo) ? b.tipo : 'Outro';
+      const etapa = leadsMod.etapaValida(b.etapa) ? b.etapa : l.etapa;
+      const dia = String(b.proximo_contato || '').trim();
+      const proximo = /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia : null;
+      await leadContatos.criar(l.id, tipo, descricao, sessao.nome);
+      await leads.atualizarAndamento(l.id, etapa, proximo);
+      return redirect(res, `/leads/${l.id}?contato=1`);
+    }
+
+    let mLeadDel = path.match(/^\/leads\/(\d+)\/excluir$/);
+    if (metodo === 'POST' && mLeadDel) {
+      await leads.excluir(mLeadDel[1]);
+      return redirect(res, '/leads?excluido=1');
     }
 
     // ---- Dashboard (home) ----
@@ -699,7 +797,8 @@ async function iniciar() {
     console.warn('[AUTH] Nenhum usuario e nenhuma variavel ADMIN_EMAIL/ADMIN_SENHA definida. Defina-as para criar o primeiro acesso.');
   }
 
-  http.createServer(handler).listen(PORT, () => {
+  // cada requisicao roda num contexto proprio (usuario/modulo nao se misturam entre pessoas)
+  http.createServer((req, res) => views.contexto.run({ usuario: null, modulo: 'cotacao' }, () => handler(req, res))).listen(PORT, () => {
     console.log(`\nServidor rodando em ${BASE_URL}`);
     console.log(`Modo de e-mail: ${mailMode.toUpperCase()}${mailMode === 'mock' ? ' (simulado — links aparecem no log)' : ''}\n`);
   });

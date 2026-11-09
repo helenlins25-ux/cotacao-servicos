@@ -83,7 +83,72 @@ export async function inicializarBanco() {
       criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // ----- Modulo Leads -----
+  await query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id              SERIAL PRIMARY KEY,
+      empresa         TEXT NOT NULL,
+      contato         TEXT,
+      telefone        TEXT,
+      email           TEXT,
+      origem          TEXT,
+      comercial       TEXT NOT NULL,
+      etapa           TEXT NOT NULL DEFAULT 'novo',
+      proximo_contato DATE,
+      observacoes     TEXT,
+      criado_em       TIMESTAMPTZ NOT NULL DEFAULT now(),
+      atualizado_em   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS lead_contatos (
+      id         SERIAL PRIMARY KEY,
+      lead_id    INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      tipo       TEXT NOT NULL,
+      descricao  TEXT NOT NULL,
+      autor      TEXT,
+      criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
+
+// ---------- Leads ----------
+export const leads = {
+  listar: async () => (await query('SELECT * FROM leads ORDER BY id DESC')).rows,
+  obter: async (id) => (await query('SELECT * FROM leads WHERE id = $1', [Number(id)])).rows[0],
+  criar: async (d) =>
+    (await query(
+      `INSERT INTO leads (empresa, contato, telefone, email, origem, comercial, etapa, proximo_contato, observacoes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [d.empresa, d.contato || null, d.telefone || null, d.email || null, d.origem || null,
+       d.comercial, d.etapa || 'novo', d.proximo_contato || null, d.observacoes || null]
+    )).rows[0],
+  atualizar: async (id, d) =>
+    (await query(
+      `UPDATE leads SET empresa = $2, contato = $3, telefone = $4, email = $5, origem = $6,
+         comercial = $7, etapa = $8, proximo_contato = $9, observacoes = $10, atualizado_em = now()
+       WHERE id = $1 RETURNING *`,
+      [Number(id), d.empresa, d.contato || null, d.telefone || null, d.email || null, d.origem || null,
+       d.comercial, d.etapa, d.proximo_contato || null, d.observacoes || null]
+    )).rows[0],
+  // usado ao registrar um contato: atualiza etapa e proximo contato
+  atualizarAndamento: async (id, etapa, proximo_contato) =>
+    (await query(
+      'UPDATE leads SET etapa = $2, proximo_contato = $3, atualizado_em = now() WHERE id = $1 RETURNING *',
+      [Number(id), etapa, proximo_contato || null]
+    )).rows[0],
+  excluir: async (id) => { await query('DELETE FROM leads WHERE id = $1', [Number(id)]); },
+};
+
+export const leadContatos = {
+  porLead: async (leadId) =>
+    (await query('SELECT * FROM lead_contatos WHERE lead_id = $1 ORDER BY id DESC', [Number(leadId)])).rows,
+  criar: async (leadId, tipo, descricao, autor) =>
+    (await query(
+      'INSERT INTO lead_contatos (lead_id, tipo, descricao, autor) VALUES ($1,$2,$3,$4) RETURNING *',
+      [Number(leadId), tipo, descricao, autor || null]
+    )).rows[0],
+};
 
 // ---------- Usuarios (login) ----------
 export const usuarios = {
@@ -185,4 +250,4 @@ export const convites = {
     )).rows[0],
 };
 
-export default { inicializarBanco, parceiros, cotacoes, convites, usuarios };
+export default { inicializarBanco, parceiros, cotacoes, convites, usuarios, leads, leadContatos };

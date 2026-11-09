@@ -114,3 +114,18 @@ render.yaml            # configuração de deploy
 | `DB_ENGINE`   | `sqlite` força o modo de teste local |
 | `MAIL_MODE`   | `mock` (simulado) ou `smtp` (envio real) |
 | `BASE_URL`    | URL pública (detectada automaticamente se omitida) |
+
+---
+
+## 🧩 Módulos do sistema
+
+O sistema é uma plataforma com **login único** e módulos selecionáveis no topo da tela:
+
+| Módulo | Rotas | O que faz |
+|--------|-------|-----------|
+| 📦 **Cotação** | `/`, `/cotacoes`, `/financeiro`, `/parceiros` | Cotações de frete, parceiros, fechamento, financeiro e relatórios |
+| 🎯 **Leads** | `/leads/painel`, `/leads`, `/leads/novo` | Funil de vendas (Novo → Em contato → Proposta enviada → Negociação → Ganho/Perdido), histórico de contatos, próximo contato/follow-up e painel por comercial |
+
+- Usuários e perfis (ADM / Comercial) valem para todos os módulos.
+- Todo texto digitado é escapado antes de ser exibido (proteção contra injeção de HTML).
+- Estado de usuário/módulo é isolado por requisição (`AsyncLocalStorage`).
