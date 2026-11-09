@@ -416,6 +416,12 @@ export function paginaDetalheCotacao(c, convites, info) {
           <div><label>Telefone</label>${c.motorista_telefone || '—'}</div>
         </div>
         <p class="muted">Preenchido pelo parceiro vencedor em ${fmtData(c.veiculo_preenchido_em)}.</p>
+        <hr style="border:none;border-top:1px solid var(--borda);margin:16px 0">
+        <div class="row">
+          <div><label>Coletou a mercadoria?</label>${c.coletado === 'sim' ? '✅ Sim' + (c.coletado_em ? ' <span class="muted">(' + fmtData(c.coletado_em) + ')</span>' : '') : c.coletado === 'nao' ? '❌ Não' : '<span class="muted">—</span>'}</div>
+          <div><label>Entregou a mercadoria?</label>${c.entregue === 'sim' ? '✅ Sim' + (c.entregue_em ? ' <span class="muted">(' + fmtData(c.entregue_em) + ')</span>' : '') : c.entregue === 'nao' ? '❌ Não' : '<span class="muted">—</span>'}</div>
+          <div><label>Comprovante</label>${c.comprovante_url ? '<a href="' + c.comprovante_url + '" target="_blank">📎 Ver anexo</a>' : '<span class="muted">—</span>'}</div>
+        </div>
       ` : '<p class="muted">Aguardando o parceiro vencedor informar os dados do veículo (via link enviado por e-mail).</p>'}
     </div>`;
   }
@@ -510,9 +516,11 @@ export function paginaSimples(titulo, html, externo = false) {
   return layout(titulo, `<div class="card">${html}</div>`, externo);
 }
 
-// ---------------- VEICULO (vencedor preenche — EXTERNO) ----------------
+// ---------------- VEICULO + ACOMPANHAMENTO (vencedor preenche — EXTERNO) ----------------
 export function paginaVeiculo(c, info) {
-  const jaPreenchido = c.veiculo_preenchido_em;
+  const jaTemVeiculo = c.veiculo_preenchido_em;
+  const sel = (campo, valor) => (c[campo] === valor ? 'selected' : '');
+
   const cabecalho = `
     <div class="card">
       <h1>🎉 Você ganhou a cotação #${c.id}!</h1>
@@ -528,29 +536,71 @@ export function paginaVeiculo(c, info) {
       </div>
     </div>`;
 
-  if (jaPreenchido) {
-    return layout('Dados registrados', cabecalho + `
-      <div class="card"><div class="ok">✅ Os dados do veículo já foram registrados:
-        <br><br><strong>Placa:</strong> ${c.veiculo_placa || '—'}
-        <br><strong>Motorista:</strong> ${c.motorista_nome || '—'}
-        <br><strong>Telefone:</strong> ${c.motorista_telefone || '—'}
-        <br><br>Obrigado!</div></div>
-    `, true);
-  }
+  const avisoHtml = info.aviso ? `<div class="ok">${info.aviso}</div><br>` : '';
 
-  return layout('Dados do veículo', cabecalho + `
+  // 1) Bloco: dados do veiculo (se ainda nao preencheu, mostra form; senao, mostra registrado)
+  let blocoVeiculo;
+  if (!jaTemVeiculo) {
+    blocoVeiculo = `
     <div class="card">
-      <h2>Informe os dados do veículo e motorista</h2>
+      <h2>1. Informe os dados do veículo e motorista</h2>
       <form method="post" action="/veiculo/${info.token}">
         <div class="row">
           <div><label>Placa do veículo *</label><input name="placa" required placeholder="ABC1D23"></div>
           <div><label>Nome do motorista</label><input name="motorista" placeholder="Nome completo"></div>
           <div><label>Telefone do motorista</label><input name="telefone" placeholder="(00) 00000-0000"></div>
         </div>
-        <br><button type="submit">Enviar dados</button>
+        <br><button type="submit">Salvar dados do veículo</button>
       </form>
-    </div>
-  `, true);
+    </div>`;
+  } else {
+    blocoVeiculo = `
+    <div class="card">
+      <h2>1. Dados do veículo ✅</h2>
+      <div class="row">
+        <div><label>Placa</label>${c.veiculo_placa || '—'}</div>
+        <div><label>Motorista</label>${c.motorista_nome || '—'}</div>
+        <div><label>Telefone</label>${c.motorista_telefone || '—'}</div>
+      </div>
+    </div>`;
+  }
+
+  // 2) Bloco: acompanhamento da viagem (so aparece depois que o veiculo foi informado)
+  let blocoAndamento = '';
+  if (jaTemVeiculo) {
+    const comprovante = c.comprovante_url
+      ? `<p class="muted">Comprovante atual: <a href="${c.comprovante_url}" target="_blank">ver anexo</a></p>` : '';
+    blocoAndamento = `
+    <div class="card">
+      <h2>2. Acompanhamento da viagem</h2>
+      <form method="post" action="/veiculo/${info.token}/andamento" enctype="multipart/form-data">
+        <div class="row">
+          <div><label>Já coletou a mercadoria?</label>
+            <select name="coletado">
+              <option value="" ${sel('coletado', null)}>Selecione...</option>
+              <option value="nao" ${sel('coletado', 'nao')}>Não</option>
+              <option value="sim" ${sel('coletado', 'sim')}>Sim</option>
+            </select>
+          </div>
+          <div><label>Já entregou a mercadoria?</label>
+            <select name="entregue">
+              <option value="" ${sel('entregue', null)}>Selecione...</option>
+              <option value="nao" ${sel('entregue', 'nao')}>Não</option>
+              <option value="sim" ${sel('entregue', 'sim')}>Sim</option>
+            </select>
+          </div>
+        </div>
+        ${info.anexoAtivo
+          ? `<label>Anexar comprovante (foto, print ou PDF)</label>
+             <input type="file" name="comprovante" accept="image/*,application/pdf">
+             ${comprovante}`
+          : `<p class="muted">⚠️ O envio de anexos ainda não está disponível.</p>`}
+        <br><button type="submit">Atualizar andamento</button>
+      </form>
+    </div>`;
+  }
+
+  return layout('Acompanhamento da viagem', avisoHtml + cabecalho + blocoVeiculo + blocoAndamento, true);
 }
 
 // ---------------- LOGIN ----------------

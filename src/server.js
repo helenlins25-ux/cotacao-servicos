@@ -10,6 +10,7 @@ import { enviarEmail, mailMode } from './mailer.js';
 import * as negocio from './negocio.js';
 import * as views from './views.js';
 import * as auth from './auth.js';
+import * as storage from './storage.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
@@ -174,6 +175,66 @@ function lerBody(req) {
       resolve(obj);
     });
   });
+}
+
+// Le body multipart/form-data (para upload de arquivo). Retorna { campos, arquivo }.
+// arquivo = { nome, contentType, buffer } ou null. Limite de 8MB.
+function lerMultipart(req) {
+  return new Promise((resolve, reject) => {
+    const ct = req.headers['content-type'] || '';
+    const m = ct.match(/boundary=(.+)$/);
+    if (!m) return resolve({ campos: {}, arquivo: null });
+    const boundary = '--' + m[1];
+    const chunks = [];
+    let tamanho = 0;
+    req.on('data', (c) => {
+      tamanho += c.length;
+      if (tamanho > 8 * 1024 * 1024) { reject(new Error('Arquivo muito grande (máx 8MB)')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      try {
+        const buf = Buffer.concat(chunks);
+        const campos = {};
+        let arquivo = null;
+        const sep = Buffer.from('\r\n\r\n');
+        const partes = dividirBuffer(buf, Buffer.from(boundary));
+        for (const parte of partes) {
+          if (parte.length < 4) continue;
+          const idx = parte.indexOf(sep);
+          if (idx < 0) continue;
+          const header = parte.slice(0, idx).toString('utf8');
+          let corpo = parte.slice(idx + sep.length);
+          // remove o \r\n final da parte
+          if (corpo.slice(-2).toString() === '\r\n') corpo = corpo.slice(0, -2);
+          const nomeCampo = (header.match(/name="([^"]*)"/) || [])[1];
+          const filename = (header.match(/filename="([^"]*)"/) || [])[1];
+          if (!nomeCampo) continue;
+          if (filename) {
+            if (filename.trim() !== '') {
+              const tipo = (header.match(/Content-Type:\s*([^\r\n]+)/i) || [])[1] || 'application/octet-stream';
+              arquivo = { nome: filename, contentType: tipo.trim(), buffer: corpo };
+            }
+          } else {
+            campos[nomeCampo] = corpo.toString('utf8');
+          }
+        }
+        resolve({ campos, arquivo });
+      } catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
+}
+function dividirBuffer(buf, sep) {
+  const partes = [];
+  let ini = 0;
+  while (true) {
+    const idx = buf.indexOf(sep, ini);
+    if (idx < 0) { partes.push(buf.slice(ini)); break; }
+    partes.push(buf.slice(ini, idx));
+    ini = idx + sep.length;
+  }
+  return partes;
 }
 
 async function handler(req, res) {
@@ -479,7 +540,10 @@ async function handler(req, res) {
         return html(res, views.paginaSimples('Indisponível', 'Esta cotação ainda não foi fechada com você, ou não está mais disponível.', true), 403);
       }
       const p = await parceiros.obter(convite.parceiro_id);
-      return html(res, views.paginaVeiculo(c, { nome: p?.nome || '', token: convite.token }));
+      let aviso = null;
+      if (url.searchParams.get('veiculo_ok')) aviso = '✅ Dados do veículo registrados! Agora você pode atualizar o andamento da viagem abaixo.';
+      else if (url.searchParams.get('andamento_ok')) aviso = '✅ Andamento da viagem atualizado. Obrigado!';
+      return html(res, views.paginaVeiculo(c, { nome: p?.nome || '', token: convite.token, aviso, anexoAtivo: storage.storageConfigurado() }));
     }
     // ---- Salvar dados do veiculo (POST, EXTERNO) ----
     if (metodo === 'POST' && mVeicGet) {
@@ -494,7 +558,45 @@ async function handler(req, res) {
         return html(res, views.paginaSimples('Erro', 'Informe ao menos a placa do veículo. <a href="/veiculo/' + convite.token + '">Voltar</a>', true), 400);
       }
       await cotacoes.salvarVeiculo(c.id, { placa: body.placa, motorista: body.motorista, telefone: body.telefone });
-      return html(res, views.paginaSimples('Dados enviados', '✅ Dados do veículo registrados com sucesso. Obrigado!', true), 200);
+      return redirect(res, `/veiculo/${convite.token}?veiculo_ok=1`);
+    }
+
+    // ---- Atualizar andamento da viagem: coleta/entrega + anexo (POST, EXTERNO, multipart) ----
+    let mAndamento = path.match(/^\/veiculo\/([a-f0-9]+)\/andamento$/i);
+    if (metodo === 'POST' && mAndamento) {
+      const convite = await convites.porToken(mAndamento[1]);
+      if (!convite) return html(res, views.paginaSimples('Link inválido', 'Este link não existe.', true), 404);
+      let c = await cotacoes.obter(convite.cotacao_id);
+      if (!c.fechado_em || c.parceiro_vencedor !== convite.parceiro_id) {
+        return html(res, views.paginaSimples('Indisponível', 'Esta cotação não está disponível.', true), 403);
+      }
+      let campos = {}, arquivo = null;
+      try {
+        const parsed = await lerMultipart(req);
+        campos = parsed.campos; arquivo = parsed.arquivo;
+      } catch (e) {
+        return html(res, views.paginaSimples('Erro', 'Falha no envio: ' + e.message + ' <a href="/veiculo/' + convite.token + '">Voltar</a>', true), 400);
+      }
+      // upload do comprovante (se houver arquivo e storage configurado)
+      let comprovanteUrl;
+      if (arquivo && storage.storageConfigurado()) {
+        try {
+          const ext = storage.extDeTipo(arquivo.contentType);
+          const nome = `cotacao-${c.id}/comprovante-${Date.now()}.${ext}`;
+          comprovanteUrl = await storage.enviarArquivo(nome, arquivo.buffer, arquivo.contentType);
+        } catch (e) {
+          console.error('[STORAGE] Falha no upload:', e.message);
+          return html(res, views.paginaSimples('Erro no anexo', 'Não foi possível enviar o anexo: ' + e.message + ' <a href="/veiculo/' + convite.token + '">Voltar</a>', true), 500);
+        }
+      } else if (arquivo && !storage.storageConfigurado()) {
+        return html(res, views.paginaSimples('Anexo indisponível', 'O envio de anexos ainda não está configurado. <a href="/veiculo/' + convite.token + '">Voltar</a>', true), 400);
+      }
+      await cotacoes.salvarAndamento(c.id, {
+        coletado: campos.coletado === 'sim' ? 'sim' : (campos.coletado === 'nao' ? 'nao' : undefined),
+        entregue: campos.entregue === 'sim' ? 'sim' : (campos.entregue === 'nao' ? 'nao' : undefined),
+        comprovante_url: comprovanteUrl,
+      });
+      return redirect(res, `/veiculo/${convite.token}?andamento_ok=1`);
     }
 
     // ---- Pagina de resposta do parceiro (GET) ----

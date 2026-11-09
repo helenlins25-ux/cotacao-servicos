@@ -49,6 +49,12 @@ export async function inicializarBanco() {
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS motorista_nome TEXT`);
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS motorista_telefone TEXT`);
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS veiculo_preenchido_em TIMESTAMPTZ`);
+  // Acompanhamento da viagem (preenchido pelo parceiro vencedor)
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS coletado TEXT`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS coletado_em TIMESTAMPTZ`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS entregue TEXT`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS entregue_em TIMESTAMPTZ`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS comprovante_url TEXT`);
   await query(`
     CREATE TABLE IF NOT EXISTS convites (
       id             SERIAL PRIMARY KEY,
@@ -130,6 +136,23 @@ export const cotacoes = {
        WHERE id = $1 RETURNING *`,
       [Number(id), placa || null, motorista || null, telefone || null]
     )).rows[0],
+  // Acompanhamento da viagem: coleta, entrega e comprovante (anexo).
+  salvarAndamento: async (id, { coletado, entregue, comprovante_url }) => {
+    const c = (await query('SELECT coletado, entregue, comprovante_url FROM cotacoes WHERE id = $1', [Number(id)])).rows[0] || {};
+    const novoColetado = coletado ?? c.coletado;
+    const novoEntregue = entregue ?? c.entregue;
+    const novoComprovante = comprovante_url ?? c.comprovante_url;
+    return (await query(
+      `UPDATE cotacoes
+       SET coletado = $2,
+           coletado_em = CASE WHEN $2 = 'sim' AND coletado_em IS NULL THEN now() ELSE coletado_em END,
+           entregue = $3,
+           entregue_em = CASE WHEN $3 = 'sim' AND entregue_em IS NULL THEN now() ELSE entregue_em END,
+           comprovante_url = $4
+       WHERE id = $1 RETURNING *`,
+      [Number(id), novoColetado, novoEntregue, novoComprovante]
+    )).rows[0];
+  },
 };
 
 // ---------- Convites ----------
