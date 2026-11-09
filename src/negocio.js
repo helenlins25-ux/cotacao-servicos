@@ -59,21 +59,32 @@ export async function fecharSeVencido(cotacao) {
 
 // Processa todas as cotacoes vencidas (fecha as que precisam) e retorna a lista
 // com status e faturamento calculados. Usado na home e no dashboard.
+// Fecha (se vencida) e calcula status/respostas/faturamento de UMA cotacao.
+export async function processarCotacao(c) {
+  c = await fecharSeVencido(c);
+  const convs = await convites.porCotacao(c.id);
+  return {
+    ...c,
+    _convites: convs,
+    status: statusDe(c, convs),
+    convidados: convs.length,
+    respondidas: convs.filter((v) => v.respondido_em).length,
+    faturamento: faturamentoDe(c),
+  };
+}
+
 export async function carregarCotacoesProcessadas() {
-  let lista = await cotacoes.listar();
+  const lista = await cotacoes.listar();
   const resultado = [];
-  for (let c of lista) {
-    c = await fecharSeVencido(c);
-    const convs = await convites.porCotacao(c.id);
-    resultado.push({
-      ...c,
-      _convites: convs,
-      status: statusDe(c, convs),
-      convidados: convs.length,
-      respondidas: convs.filter((v) => v.respondido_em).length,
-      faturamento: faturamentoDe(c),
-    });
-  }
+  for (const c of lista) resultado.push(await processarCotacao(c));
+  return resultado;
+}
+
+// Cotacoes vinculadas a um lead (ja processadas).
+export async function cotacoesDoLead(leadId) {
+  const lista = await cotacoes.porLead(leadId);
+  const resultado = [];
+  for (const c of lista) resultado.push(await processarCotacao(c));
   return resultado;
 }
 

@@ -384,19 +384,25 @@ export function paginaParceiros(parceiros, msg) {
 }
 
 // ---------------- NOVA COTACAO ----------------
-export function paginaNovaCotacao(parceiros, comerciais) {
+// extra = { leads: [...], leadId, comercial } (todos opcionais): vinculo com o modulo Leads
+export function paginaNovaCotacao(parceiros, comerciais, extra = {}) {
   const checks = parceiros.map(p => `
     <label class="check"><input type="checkbox" name="parceiros" value="${p.id}"> ${esc(p.nome)} <span class="muted">(${esc(p.email)})</span></label>
   `).join('') || '<p class="muted">Nenhum parceiro cadastrado. <a href="/parceiros">Cadastre um parceiro</a> antes de criar a cotação.</p>';
 
   const veiculos = ['Fiorino', 'VUC', 'Van', 'Caminhão 3/4', 'Caminhão Toco', 'Caminhão Truck', 'Carreta', 'Bitrem'];
   const optsVeic = veiculos.map(v => `<option value="${v}">${v}</option>`).join('');
-  const optsCom = comerciais.map(c => `<option value="${c}">${c}</option>`).join('');
+  const optsCom = comerciais.map(c => `<option value="${esc(c)}" ${c === extra.comercial ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  const optsLead = ['<option value="">Nenhum (cotação avulsa)</option>']
+    .concat((extra.leads || []).map((l) =>
+      `<option value="${l.id}" ${Number(l.id) === Number(extra.leadId) ? 'selected' : ''}>${esc(l.empresa)}${l.contato ? ' — ' + esc(l.contato) : ''} (${esc(nomeEtapa(l.etapa))})</option>`)).join('');
 
   return layout('Nova cotação', `
     <h1>Nova cotação</h1>
     <div class="card">
       <form method="post" action="/cotacoes">
+        <label>Lead de origem (opcional) <span class="muted">— vincula esta cotação ao módulo Leads</span></label>
+        <select name="lead_id">${optsLead}</select>
         <div class="row">
           <div><label>Origem</label><input name="origem" required placeholder="São Paulo - SP"></div>
           <div><label>Destino</label><input name="destino" required placeholder="Rio de Janeiro - RJ"></div>
@@ -464,7 +470,25 @@ export function paginaListaCotacoes(cotacoes) {
 
 // ---------------- DETALHE (INTERNO) ----------------
 export function paginaDetalheCotacao(c, convites, info) {
-  const { status, faturamento, vencedorNome, percFixo, expirada, aviso } = info;
+  const { status, faturamento, vencedorNome, percFixo, expirada, aviso, lead, leadsLista } = info;
+
+  // Vinculo com o modulo Leads
+  const optsLeadVinc = ['<option value="">Nenhum (desvincular)</option>']
+    .concat((leadsLista || []).map((l) =>
+      `<option value="${l.id}" ${lead && Number(lead.id) === Number(l.id) ? 'selected' : ''}>${esc(l.empresa)}${l.contato ? ' — ' + esc(l.contato) : ''} (${esc(nomeEtapa(l.etapa))})</option>`)).join('');
+  const blocoLead = `
+    <div class="card">
+      <h2>🎯 Lead vinculado</h2>
+      ${lead
+        ? `<p><a href="/leads/${lead.id}"><strong>${esc(lead.empresa)}</strong></a>${lead.contato ? ' — ' + esc(lead.contato) : ''} ${tagEtapa(lead.etapa)}</p>`
+        : '<p class="muted">Esta cotação não está vinculada a nenhum lead.</p>'}
+      <form method="post" action="/cotacoes/${c.id}/lead">
+        <div class="row">
+          <div><label>${lead ? 'Trocar lead' : 'Vincular a um lead'}</label><select name="lead_id">${optsLeadVinc}</select></div>
+          <div style="flex:0"><br><button type="submit">Salvar vínculo</button></div>
+        </div>
+      </form>
+    </div>`;
 
   const linhas = convites.map(v => {
     const ehVencedor = c.parceiro_vencedor && v.parceiro_id === c.parceiro_vencedor;
@@ -573,6 +597,7 @@ export function paginaDetalheCotacao(c, convites, info) {
       </div>
       ${c.observacoes ? `<label>Observações</label><div class="muted">${esc(c.observacoes)}</div>` : ''}
     </div>
+    ${blocoLead}
     ${blocoFechamento}
     <div class="card">
       <h2>Respostas dos parceiros</h2>
@@ -697,7 +722,34 @@ export function paginaLeadsPainel(p) {
     <tr>
       <td><strong>${esc(nome)}</strong></td><td>${m.total}</td><td>${m.emAberto}</td>
       <td>${m.ganhos}</td><td>${m.perdidos}</td><td>${pct(m.conversao)}</td>
+      <td>${m.comCotacao}</td><td>${m.comNegocio}</td>
     </tr>`).join('');
+
+  // Vinculo Lead x Cotacao: quantos leads estao fechando negocio
+  const v = p.vinculo;
+  const linhasFechados = v.leadsFechados.map((x) => `
+    <tr>
+      <td><a href="/leads/${x.lead.id}">${esc(x.lead.empresa)}</a><br><span class="muted">${esc(x.lead.contato || '')}</span></td>
+      <td>${esc(x.lead.comercial)}</td>
+      <td>${x.fechadas} de ${x.cotacoes}</td>
+      <td>${fmtMoeda(x.faturamento)}</td>
+    </tr>`).join('');
+  const blocoVinculo = `
+    <div class="card">
+      <h2>🔗 Leads × Cotações — negócios fechados</h2>
+      <p class="muted">Um lead conta como <strong>negócio fechado</strong> quando tem ao menos uma cotação fechada (parceiro vencedor definido).</p>
+      <div class="kpis">
+        <div class="kpi azul"><div class="n">${v.leadsComCotacao}</div><div class="l">Leads com cotação (${pct(v.pctComCotacao)})</div></div>
+        <div class="kpi verd"><div class="n">${v.leadsComNegocio}</div><div class="l">Leads com negócio fechado (${pct(v.pctNegocio)})</div></div>
+        <div class="kpi amar"><div class="n">${v.cotacoesFechadas} / ${v.cotacoes}</div><div class="l">Cotações fechadas / geradas</div></div>
+        <div class="kpi roxo"><div class="n">${fmtMoeda(v.faturamento)}</div><div class="l">Faturamento gerado (líquido ${fmtMoeda(v.liquido)})</div></div>
+      </div>
+      ${v.leadsFechados.length ? `
+      <br><div class="tabela-wrap"><table>
+        <thead><tr><th>Lead</th><th>Comercial</th><th>Cotações fechadas</th><th>Faturamento gerado</th></tr></thead>
+        <tbody>${linhasFechados}</tbody>
+      </table></div>` : '<p class="muted">Nenhum lead com negócio fechado ainda.</p>'}
+    </div>`;
 
   return layout('Painel de Leads', `
     <h1>🎯 Painel de Leads</h1>
@@ -708,6 +760,7 @@ export function paginaLeadsPainel(p) {
       <div class="kpi roxo"><div class="n">${pct(p.conversao)}</div><div class="l">Conversão (ganhos ÷ total)</div></div>
     </div>
     <br>
+    ${blocoVinculo}
     <div class="card">
       <h2>Funil de vendas</h2>
       <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(125px,1fr))">${kpiEtapas}</div>
@@ -723,7 +776,7 @@ export function paginaLeadsPainel(p) {
     <div class="card">
       <h2>Desempenho por comercial</h2>
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Comercial</th><th>Leads</th><th>Em aberto</th><th>Ganhos</th><th>Perdidos</th><th>Conversão</th></tr></thead>
+        <thead><tr><th>Comercial</th><th>Leads</th><th>Em aberto</th><th>Ganhos</th><th>Perdidos</th><th>Conversão</th><th>Com cotação</th><th>Negócio fechado</th></tr></thead>
         <tbody>${linhasCom}</tbody>
       </table></div>
     </div>
@@ -817,6 +870,39 @@ export function paginaLeadDetalhe(l, contatos, ctx) {
   const { comerciais, hoje, aviso, erro } = ctx;
   const optsTipo = TIPOS_CONTATO.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
 
+  // Cotacoes vinculadas a este lead
+  const cots = ctx.cotacoes || [];
+  const fechadas = cots.filter((c) => c.status === 'fechada');
+  const fatGerado = fechadas.reduce((s, c) => s + c.faturamento, 0);
+  const linhasCot = cots.map((c) => `
+    <tr>
+      <td><a href="/cotacoes/${c.id}">#${c.id}</a></td>
+      <td>${esc(c.origem)} → ${esc(c.destino)}</td>
+      <td><span class="tag ${c.status}">${rotuloStatus[c.status] || c.status}</span></td>
+      <td>${c.status === 'fechada' ? fmtMoeda(c.faturamento) : '<span class="muted">—</span>'}</td>
+    </tr>`).join('');
+  const sugestaoGanho = (fechadas.length && l.etapa !== 'ganho') ? `
+    <div class="warn" style="margin-top:12px">
+      Este lead já tem cotação fechada, mas ainda está na etapa <strong>${esc(nomeEtapa(l.etapa))}</strong>.
+      <form method="post" action="/leads/${l.id}/ganho" style="margin:10px 0 0">
+        <button type="submit">✅ Marcar lead como Ganho</button>
+      </form>
+    </div>` : '';
+  const blocoCotacoes = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">📦 Cotações deste lead ${fechadas.length ? '<span class="tag fechada">✅ Negócio fechado</span>' : ''}</h2>
+        <a class="btn" href="/cotacoes/nova?lead=${l.id}">+ Gerar cotação</a>
+      </div>
+      ${cots.length ? `
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>#</th><th>Trajeto</th><th>Status</th><th>Faturamento</th></tr></thead>
+        <tbody>${linhasCot}</tbody>
+      </table></div>` : '<p class="muted">Nenhuma cotação gerada para este lead ainda.</p>'}
+      ${fechadas.length ? `<p class="muted" style="margin-bottom:0">Faturamento gerado por este lead: <strong>${fmtMoeda(fatGerado)}</strong></p>` : ''}
+      ${sugestaoGanho}
+    </div>`;
+
   const historico = contatos.length ? `<ul class="historico">${contatos.map((c) => `
     <li>
       <strong>${esc(c.tipo)}</strong> — ${fmtData(c.criado_em)} ${c.autor ? `<span class="muted">por ${esc(c.autor)}</span>` : ''}
@@ -845,6 +931,8 @@ export function paginaLeadDetalhe(l, contatos, ctx) {
       ${l.observacoes ? `<label>Observações</label><div style="white-space:pre-wrap" class="muted">${esc(l.observacoes)}</div>` : ''}
       <p class="muted" style="margin-bottom:0">Cadastrado em ${fmtData(l.criado_em)}</p>
     </div>
+
+    ${blocoCotacoes}
 
     <div class="card">
       <h2>Registrar contato</h2>
@@ -875,7 +963,7 @@ export function paginaLeadDetalhe(l, contatos, ctx) {
       </details>
       <hr style="border:none;border-top:1px solid var(--borda);margin:16px 0">
       <form method="post" action="/leads/${l.id}/excluir" style="margin:0"
-            onsubmit="return confirm('Excluir este lead e todo o histórico de contatos?');">
+            onsubmit="return confirm('Excluir este lead e todo o histórico de contatos? As cotações vinculadas serão mantidas.');">
         <button type="submit" style="background:#fff;color:#b91c1c;border-color:#fca5a5">🗑️ Excluir lead</button>
       </form>
     </div>

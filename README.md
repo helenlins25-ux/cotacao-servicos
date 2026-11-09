@@ -129,3 +129,12 @@ O sistema é uma plataforma com **login único** e módulos selecionáveis no to
 - Usuários e perfis (ADM / Comercial) valem para todos os módulos.
 - Todo texto digitado é escapado antes de ser exibido (proteção contra injeção de HTML).
 - Estado de usuário/módulo é isolado por requisição (`AsyncLocalStorage`).
+
+### 🔗 Vínculo Lead × Cotação
+
+- Ao criar uma cotação é possível escolher o **lead de origem** (opcional); no lead há o botão **"Gerar cotação"**, que já abre o formulário com o lead e o comercial preenchidos. Cotações existentes podem ser vinculadas/desvinculadas no detalhe da cotação.
+- **Negócio fechado** = lead com pelo menos uma cotação **fechada** (parceiro vencedor definido).
+- O **Painel de Leads** mostra: leads com cotação, leads com negócio fechado (e %), cotações fechadas/geradas, faturamento gerado (total e líquido) e a lista dos leads que fecharam, além das colunas "Com cotação" e "Negócio fechado" por comercial.
+- Quando um lead tem cotação fechada e ainda não está em "Ganho", o detalhe do lead sugere **"Marcar lead como Ganho"** (ação manual; a etapa nunca muda sozinha).
+- Excluir um lead **não apaga** as cotações vinculadas (elas ficam avulsas).
+- Dados do lead nunca aparecem para o parceiro (página de resposta, e-mails, relatório compartilhável).

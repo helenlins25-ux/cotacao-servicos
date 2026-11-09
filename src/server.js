@@ -408,7 +408,9 @@ async function handler(req, res) {
 
     // ======== MODULO LEADS (interno: ADM + Comercial) ========
     if (metodo === 'GET' && path === '/leads/painel') {
-      return html(res, views.paginaLeadsPainel(await leadsMod.calcularPainelLeads(TZ_OFFSET_HORAS)));
+      const painel = await leadsMod.calcularPainelLeads(TZ_OFFSET_HORAS); // fecha cotacoes vencidas
+      await notificarFechamentosPendentes(req);                          // avisa os parceiros do resultado
+      return html(res, views.paginaLeadsPainel(painel));
     }
     if (metodo === 'GET' && path === '/leads') {
       const filtros = {
@@ -441,12 +443,17 @@ async function handler(req, res) {
     if (mLead) {
       const l = await leads.obter(mLead[1]);
       if (!l) return html(res, views.paginaSimples('Não encontrado', 'Lead não encontrado. <a href="/leads">Voltar</a>'), 404);
-      const ctxLead = { comerciais: negocio.COMERCIAIS, hoje: leadsMod.hojeISO(TZ_OFFSET_HORAS) };
+      const ctxLead = {
+        comerciais: negocio.COMERCIAIS, hoje: leadsMod.hojeISO(TZ_OFFSET_HORAS),
+        cotacoes: await negocio.cotacoesDoLead(l.id), // cotacoes vinculadas a este lead
+      };
 
       if (metodo === 'GET') {
+        await notificarFechamentosPendentes(req);
         const q = url.searchParams;
         const aviso = q.get('criado') ? 'Lead cadastrado com sucesso!'
           : q.get('atualizado') ? 'Dados do lead atualizados.'
+          : q.get('ganho') ? 'Lead marcado como Ganho.'
           : q.get('contato') ? 'Contato registrado.' : null;
         return html(res, views.paginaLeadDetalhe(l, await leadContatos.porLead(l.id), { ...ctxLead, aviso }));
       }
@@ -467,7 +474,7 @@ async function handler(req, res) {
       const descricao = String(b.descricao || '').trim();
       if (!descricao) {
         return html(res, views.paginaLeadDetalhe(l, await leadContatos.porLead(l.id),
-          { comerciais: negocio.COMERCIAIS, hoje: leadsMod.hojeISO(TZ_OFFSET_HORAS), erro: 'Descreva o que foi conversado.' }), 400);
+          { comerciais: negocio.COMERCIAIS, hoje: leadsMod.hojeISO(TZ_OFFSET_HORAS), cotacoes: await negocio.cotacoesDoLead(l.id), erro: 'Descreva o que foi conversado.' }), 400);
       }
       const tipo = leadsMod.TIPOS_CONTATO.includes(b.tipo) ? b.tipo : 'Outro';
       const etapa = leadsMod.etapaValida(b.etapa) ? b.etapa : l.etapa;
@@ -476,6 +483,20 @@ async function handler(req, res) {
       await leadContatos.criar(l.id, tipo, descricao, sessao.nome);
       await leads.atualizarAndamento(l.id, etapa, proximo);
       return redirect(res, `/leads/${l.id}?contato=1`);
+    }
+
+    // Marca o lead como GANHO (acao manual, sugerida quando ha cotacao fechada vinculada)
+    let mLeadGanho = path.match(/^\/leads\/(\d+)\/ganho$/);
+    if (metodo === 'POST' && mLeadGanho) {
+      const l = await leads.obter(mLeadGanho[1]);
+      if (!l) return html(res, views.paginaSimples('Não encontrado', 'Lead não encontrado. <a href="/leads">Voltar</a>'), 404);
+      const fechadas = (await negocio.cotacoesDoLead(l.id)).filter((c) => c.status === 'fechada');
+      if (!fechadas.length) {
+        return html(res, views.paginaSimples('Não é possível', 'Este lead ainda não tem cotação fechada. <a href="/leads/' + l.id + '">Voltar</a>'), 409);
+      }
+      await leads.atualizarAndamento(l.id, 'ganho', null);
+      await leadContatos.criar(l.id, 'Outro', `Lead marcado como Ganho (cotação #${fechadas[0].id} fechada).`, sessao.nome);
+      return redirect(res, `/leads/${l.id}?ganho=1`);
     }
 
     let mLeadDel = path.match(/^\/leads\/(\d+)\/excluir$/);
@@ -527,7 +548,12 @@ async function handler(req, res) {
 
     // ---- Nova cotacao (form) ----
     if (metodo === 'GET' && path === '/cotacoes/nova') {
-      return html(res, views.paginaNovaCotacao(await parceiros.listar(), negocio.COMERCIAIS));
+      // ?lead=ID pre-seleciona o lead (e o comercial dele) — vindo do botao "Gerar cotacao" no lead
+      const todosLeads = await leads.listar();
+      const leadSel = todosLeads.find((l) => String(l.id) === String(url.searchParams.get('lead') || ''));
+      return html(res, views.paginaNovaCotacao(await parceiros.listar(), negocio.COMERCIAIS, {
+        leads: todosLeads, leadId: leadSel?.id, comercial: leadSel?.comercial,
+      }));
     }
 
     // ---- Criar cotacao + disparar e-mails ----
@@ -544,7 +570,11 @@ async function handler(req, res) {
         return html(res, views.paginaSimples('Erro', 'Selecione um comercial responsável válido. <a href="/cotacoes/nova">Voltar</a>'), 400);
       }
 
+      // lead de origem (opcional): so aceita se o lead existir
+      const leadVinc = body.lead_id ? await leads.obter(body.lead_id) : null;
+
       const c = await cotacoes.criar({
+        lead_id: leadVinc ? leadVinc.id : null,
         origem: body.origem,
         destino: body.destino,
         peso_kg: Number(body.peso_kg),
@@ -638,7 +668,26 @@ async function handler(req, res) {
       else if (url.searchParams.get('reenviado') === 'falha') aviso = { tipo: 'warn', texto: '⚠️ Não foi possível enviar o e-mail (o link continua válido no painel).' };
       else if (url.searchParams.get('cancelado') === '1') aviso = { tipo: 'ok', texto: '✅ Convite do parceiro cancelado.' };
       else if (url.searchParams.get('renotificado') === '1') aviso = { tipo: 'ok', texto: '✅ Notificação de resultado reenviada aos parceiros.' };
-      return html(res, views.paginaDetalheCotacao(c, convComNome, { status, faturamento, vencedorNome, percFixo: negocio.PERC_FIXO, expirada: negocio.expirada(c), aviso }));
+      else if (url.searchParams.get('lead_ok')) aviso = { tipo: 'ok', texto: '✅ Vínculo com o lead atualizado.' };
+      const leadVinc = c.lead_id ? await leads.obter(c.lead_id) : null;
+      return html(res, views.paginaDetalheCotacao(c, convComNome, {
+        status, faturamento, vencedorNome, percFixo: negocio.PERC_FIXO, expirada: negocio.expirada(c), aviso,
+        lead: leadVinc, leadsLista: await leads.listar(),
+      }));
+    }
+
+    // ---- Vincular / desvincular a cotacao a um lead ----
+    let mCotLead = path.match(/^\/cotacoes\/(\d+)\/lead$/);
+    if (metodo === 'POST' && mCotLead) {
+      const c = await cotacoes.obter(mCotLead[1]);
+      if (!c) return html(res, views.paginaSimples('Não encontrada', 'Cotação não encontrada. <a href="/cotacoes">Voltar</a>'), 404);
+      const b = await lerBody(req);
+      const alvo = b.lead_id ? await leads.obter(b.lead_id) : null;
+      if (b.lead_id && !alvo) {
+        return html(res, views.paginaSimples('Erro', 'Lead não encontrado. <a href="/cotacoes/' + c.id + '">Voltar</a>'), 404);
+      }
+      await cotacoes.vincularLead(c.id, alvo ? alvo.id : null);
+      return redirect(res, `/cotacoes/${c.id}?lead_ok=1`);
     }
 
     // ---- Relatorio da cotacao (SEM bloco financeiro) ----

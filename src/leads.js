@@ -1,6 +1,6 @@
 // Regras de negocio do modulo LEADS: funil, painel e follow-ups.
 import { leads } from './db.js';
-import { COMERCIAIS } from './negocio.js';
+import { COMERCIAIS, carregarCotacoesProcessadas } from './negocio.js';
 
 export const ETAPAS = [
   { id: 'novo', nome: 'Novo' },
@@ -62,16 +62,49 @@ export async function calcularPainelLeads(tzOffsetHoras = -3) {
   atrasados.sort(porData);
   paraHoje.sort(porData);
 
+  // ----- Vinculo Lead x Cotacao -----
+  // "Fechando negocio" = lead com pelo menos uma cotacao FECHADA (parceiro vencedor definido).
+  const cotsVinculadas = (await carregarCotacoesProcessadas()).filter((c) => c.lead_id != null);
+  const cotsPorLead = new Map();
+  for (const c of cotsVinculadas) {
+    const k = Number(c.lead_id);
+    if (!cotsPorLead.has(k)) cotsPorLead.set(k, []);
+    cotsPorLead.get(k).push(c);
+  }
+
+  const novoComercial = () => ({ total: 0, emAberto: 0, ganhos: 0, perdidos: 0, comCotacao: 0, comNegocio: 0 });
   const porComercial = {};
-  for (const nome of COMERCIAIS) porComercial[nome] = { total: 0, emAberto: 0, ganhos: 0, perdidos: 0 };
+  for (const nome of COMERCIAIS) porComercial[nome] = novoComercial();
+
+  const vinculo = { leadsComCotacao: 0, leadsComNegocio: 0, cotacoes: 0, cotacoesFechadas: 0, faturamento: 0, liquido: 0, leadsFechados: [] };
   for (const l of lista) {
-    const m = (porComercial[l.comercial] ||= { total: 0, emAberto: 0, ganhos: 0, perdidos: 0 });
+    const m = (porComercial[l.comercial] ||= novoComercial());
     m.total++;
     if (l.etapa === 'ganho') m.ganhos++;
     else if (l.etapa === 'perdido') m.perdidos++;
     else m.emAberto++;
+
+    const cs = cotsPorLead.get(Number(l.id)) || [];
+    if (cs.length) {
+      vinculo.leadsComCotacao++; m.comCotacao++;
+      vinculo.cotacoes += cs.length;
+      const fechadas = cs.filter((c) => c.status === 'fechada');
+      if (fechadas.length) {
+        vinculo.leadsComNegocio++; m.comNegocio++;
+        vinculo.cotacoesFechadas += fechadas.length;
+        const fat = fechadas.reduce((s, c) => s + c.faturamento, 0);
+        const liq = fechadas.reduce((s, c) => s + c.faturamento - Number(c.bonificacao || 0), 0);
+        vinculo.faturamento += fat;
+        vinculo.liquido += liq;
+        vinculo.leadsFechados.push({ lead: l, cotacoes: cs.length, fechadas: fechadas.length, faturamento: fat });
+      }
+    }
   }
+  vinculo.leadsFechados.sort((a, b) => b.faturamento - a.faturamento);
+  vinculo.pctComCotacao = lista.length ? (vinculo.leadsComCotacao / lista.length) * 100 : 0;
+  vinculo.pctNegocio = lista.length ? (vinculo.leadsComNegocio / lista.length) * 100 : 0;
+
   for (const m of Object.values(porComercial)) m.conversao = m.total ? (m.ganhos / m.total) * 100 : 0;
 
-  return { total: lista.length, porEtapa, emAberto, ganhos, perdidos, conversao, atrasados, paraHoje, porComercial, hoje };
+  return { total: lista.length, porEtapa, emAberto, ganhos, perdidos, conversao, atrasados, paraHoje, porComercial, hoje, vinculo };
 }

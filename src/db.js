@@ -110,6 +110,8 @@ export async function inicializarBanco() {
       criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  // Vinculo Lead -> Cotacao (opcional). Se o lead for excluido, a cotacao e mantida (lead_id vira nulo).
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL`);
 }
 
 // ---------- Leads ----------
@@ -184,11 +186,16 @@ export const cotacoes = {
   obter: async (id) => (await query('SELECT * FROM cotacoes WHERE id = $1', [Number(id)])).rows[0],
   criar: async (d) =>
     (await query(
-      `INSERT INTO cotacoes (origem, destino, peso_kg, produto, volume, valor_mercadoria, tipo_veiculo, comercial, data_coleta, data_entrega, observacoes, prazo_resposta)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      `INSERT INTO cotacoes (origem, destino, peso_kg, produto, volume, valor_mercadoria, tipo_veiculo, comercial, data_coleta, data_entrega, observacoes, prazo_resposta, lead_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [d.origem, d.destino, d.peso_kg, d.produto || null, d.volume || null, d.valor_mercadoria, d.tipo_veiculo, d.comercial,
-       d.data_coleta || null, d.data_entrega || null, d.observacoes || null, d.prazo_resposta]
+       d.data_coleta || null, d.data_entrega || null, d.observacoes || null, d.prazo_resposta, d.lead_id || null]
     )).rows[0],
+  porLead: async (leadId) =>
+    (await query('SELECT * FROM cotacoes WHERE lead_id = $1 ORDER BY id DESC', [Number(leadId)])).rows,
+  // vincula (ou desvincula, com null) uma cotacao a um lead
+  vincularLead: async (id, leadId) =>
+    (await query('UPDATE cotacoes SET lead_id = $2 WHERE id = $1 RETURNING *', [Number(id), leadId ? Number(leadId) : null])).rows[0],
   fechar: async (id, { parceiro_vencedor, valor_fechado, comissao_variavel }) =>
     (await query(
       `UPDATE cotacoes
