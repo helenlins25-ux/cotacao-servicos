@@ -125,6 +125,7 @@ function layout(title, body, externo = false) {
       <a href="/">Dashboard</a>
       <a href="/cotacoes">Cotações</a>
       <a href="/cotacoes/nova">Nova cotação</a>
+      <a href="/financeiro">Financeiro</a>
       <a href="/parceiros">Parceiros</a>
       ${_usuarioAtual && _usuarioAtual.perfil === 'adm' ? '<a href="/usuarios">Usuários</a>' : ''}
       ${_usuarioAtual ? `<a href="/logout" style="margin-left:auto;background:rgba(255,255,255,.08)">Sair (${_usuarioAtual.nome.split(' ')[0]})</a>` : ''}
@@ -474,6 +475,85 @@ export function paginaDetalheCotacao(c, convites, info) {
       <h2>Respostas dos parceiros</h2>
       <div class="tabela-wrap"><table>
         <thead><tr><th>Parceiro</th><th>Valor cotado</th><th>Prazo entrega</th><th>Comentário</th><th>Status</th><th style="text-align:right">Ações</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table></div>
+    </div>
+  `);
+}
+
+// ---------------- FINANCEIRO (interno) ----------------
+// Converte data (string "YYYY-MM-DD" ou objeto Date do Postgres) para o value do <input type=date>.
+const paraInputData = (d) => {
+  if (!d) return '';
+  const iso = d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : '';
+};
+
+export function paginaFinanceiro(fin, msg) {
+  const { itens, totais } = fin;
+
+  const linhas = itens.map((c) => {
+    const bonifCel = c.temBonif
+      ? `${fmtMoeda(c.bonificacao)}<br>${c.bonifPaga
+          ? `<span class="tag fechada">✅ Paga em ${fmtDataSimples(c.bonificacao_paga_em)}</span>`
+          : '<span class="tag em_andamento">⏳ A pagar</span>'}`
+      : '<span class="muted">sem bonificação</span>';
+
+    const recebCel = c.recebido
+      ? `<span class="tag fechada">✅ Recebido em ${fmtDataSimples(c.recebido_em)}</span>`
+      : '<span class="tag em_andamento">⏳ A receber</span>';
+
+    // formulario de edicao (um por cotacao)
+    const form = `
+      <form method="post" action="/cotacoes/${c.id}/financeiro" style="margin:0">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label style="margin:0 0 2px">Recebido?</label>
+            <select name="recebido" style="padding:6px"><option value="nao" ${c.recebido ? '' : 'selected'}>Não</option><option value="sim" ${c.recebido ? 'selected' : ''}>Sim</option></select>
+          </div>
+          <div>
+            <label style="margin:0 0 2px">Data</label>
+            <input type="date" name="recebido_em" value="${paraInputData(c.recebido_em)}" style="padding:6px">
+          </div>
+          ${c.temBonif ? `
+          <div>
+            <label style="margin:0 0 2px">Bonif. paga?</label>
+            <select name="bonif_paga" style="padding:6px"><option value="nao" ${c.bonifPaga ? '' : 'selected'}>Não</option><option value="sim" ${c.bonifPaga ? 'selected' : ''}>Sim</option></select>
+          </div>
+          <div>
+            <label style="margin:0 0 2px">Data</label>
+            <input type="date" name="bonif_paga_em" value="${paraInputData(c.bonificacao_paga_em)}" style="padding:6px">
+          </div>` : ''}
+          <button type="submit" style="padding:7px 14px;font-size:13px">Salvar</button>
+        </div>
+      </form>`;
+
+    return `
+    <tr>
+      <td><a href="/cotacoes/${c.id}">#${c.id}</a></td>
+      <td>${c.origem} → ${c.destino}</td>
+      <td>${c.parceiroNome}</td>
+      <td>${fmtMoeda(c.faturamento)}<br>${recebCel}</td>
+      <td>${bonifCel}</td>
+      <td>${form}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">Nenhuma cotação fechada ainda.</td></tr>';
+
+  return layout('Financeiro', `
+    <h1>💳 Financeiro</h1>
+    ${msg ? `<div class="ok">${msg}</div><br>` : ''}
+    <div class="kpis">
+      <div class="kpi amar"><div class="n">${fmtMoeda(totais.aReceber)}</div><div class="l">A receber</div></div>
+      <div class="kpi verd"><div class="n">${fmtMoeda(totais.recebido)}</div><div class="l">Já recebido</div></div>
+      <div class="kpi amar"><div class="n">${fmtMoeda(totais.aPagar)}</div><div class="l">Bonificações a pagar</div></div>
+      <div class="kpi verd"><div class="n">${fmtMoeda(totais.pago)}</div><div class="l">Bonificações pagas</div></div>
+    </div>
+    <br>
+    <div class="card">
+      <h2>Cotações fechadas</h2>
+      <p class="muted">Marque se já recebemos o faturamento do parceiro e se a bonificação já foi paga (a opção de bonificação só aparece quando há valor).</p>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>#</th><th>Trajeto</th><th>Parceiro</th><th>Faturamento (a receber do parceiro)</th><th>Bonificação ao parceiro</th><th>Controle</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table></div>
     </div>

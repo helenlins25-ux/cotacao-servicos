@@ -77,6 +77,27 @@ export async function carregarCotacoesProcessadas() {
   return resultado;
 }
 
+// Controle financeiro: cotacoes FECHADAS com situacao de recebimento e de bonificacao.
+//  - A receber / recebido: sobre o faturamento total (2% + comissao)
+//  - A pagar / pago: sobre a bonificacao ao parceiro (so quando > 0)
+export async function calcularFinanceiro() {
+  const lista = (await carregarCotacoesProcessadas()).filter((c) => c.status === 'fechada');
+  const todosParceiros = await parceiros.listar();
+  const nomeParceiro = (id) => todosParceiros.find((p) => p.id === id)?.nome || '—';
+
+  const t = { aReceber: 0, recebido: 0, aPagar: 0, pago: 0 };
+  const itens = lista.map((c) => {
+    const bonificacao = Number(c.bonificacao || 0);
+    const recebido = Boolean(c.recebido_em);
+    const temBonif = bonificacao > 0;
+    const bonifPaga = temBonif && Boolean(c.bonificacao_paga_em);
+    if (recebido) t.recebido += c.faturamento; else t.aReceber += c.faturamento;
+    if (temBonif) { if (bonifPaga) t.pago += bonificacao; else t.aPagar += bonificacao; }
+    return { ...c, parceiroNome: nomeParceiro(c.parceiro_vencedor), bonificacao, recebido, temBonif, bonifPaga };
+  });
+  return { itens, totais: t };
+}
+
 // Monta os indicadores do dashboard.
 export async function calcularDashboard() {
   const lista = await carregarCotacoesProcessadas();

@@ -57,6 +57,9 @@ export async function inicializarBanco() {
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS entregue_em TIMESTAMPTZ`);
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS comprovante_url TEXT`);
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS bonificacao NUMERIC DEFAULT 0`);
+  // Controle financeiro: data em que recebemos do parceiro / pagamos a bonificacao (vazio = pendente)
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS recebido_em DATE`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS bonificacao_paga_em DATE`);
   await query(`
     CREATE TABLE IF NOT EXISTS convites (
       id             SERIAL PRIMARY KEY,
@@ -131,6 +134,12 @@ export const cotacoes = {
   atualizarComissao: async (id, comissao, bonificacao) =>
     (await query('UPDATE cotacoes SET comissao_variavel = $2, bonificacao = $3 WHERE id = $1 RETURNING *',
       [Number(id), comissao || 0, bonificacao || 0])).rows[0],
+  // Atualiza o controle financeiro. Datas em "YYYY-MM-DD" ou null (= pendente).
+  atualizarFinanceiro: async (id, { recebido_em, bonificacao_paga_em }) =>
+    (await query(
+      'UPDATE cotacoes SET recebido_em = $2, bonificacao_paga_em = $3 WHERE id = $1 RETURNING *',
+      [Number(id), recebido_em || null, bonificacao_paga_em || null]
+    )).rows[0],
   marcarNotificado: async (id) =>
     (await query('UPDATE cotacoes SET resultado_notificado_em = now() WHERE id = $1 RETURNING *', [Number(id)])).rows[0],
   salvarVeiculo: async (id, { placa, motorista, telefone }) =>

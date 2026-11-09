@@ -360,6 +360,31 @@ async function handler(req, res) {
       return redirect(res, '/usuarios?removido=1');
     }
 
+    // ---- Financeiro (interno: ADM + Comercial) ----
+    if (metodo === 'GET' && path === '/financeiro') {
+      const fin = await negocio.calcularFinanceiro();
+      await notificarFechamentosPendentes(req);
+      const msg = url.searchParams.get('ok') ? 'Controle financeiro atualizado com sucesso!' : null;
+      return html(res, views.paginaFinanceiro(fin, msg));
+    }
+    let mFin = path.match(/^\/cotacoes\/(\d+)\/financeiro$/);
+    if (metodo === 'POST' && mFin) {
+      const c = await cotacoes.obter(mFin[1]);
+      if (!c || !c.fechado_em) {
+        return html(res, views.paginaSimples('Erro', 'Só é possível controlar o financeiro de cotações fechadas. <a href="/financeiro">Voltar</a>'), 409);
+      }
+      const body = await lerBody(req);
+      // data de hoje no fuso de Brasilia (padrao quando marcar "Sim" sem informar a data)
+      const hoje = new Date(Date.now() + TZ_OFFSET_HORAS * 3600 * 1000).toISOString().slice(0, 10);
+      const dataValida = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? s : null);
+      const recebido_em = body.recebido === 'sim' ? (dataValida(body.recebido_em) || hoje) : null;
+      // bonificacao so pode ser marcada como paga se existir valor de bonificacao
+      const temBonif = Number(c.bonificacao || 0) > 0;
+      const bonificacao_paga_em = (temBonif && body.bonif_paga === 'sim') ? (dataValida(body.bonif_paga_em) || hoje) : null;
+      await cotacoes.atualizarFinanceiro(c.id, { recebido_em, bonificacao_paga_em });
+      return redirect(res, '/financeiro?ok=1');
+    }
+
     // ---- Dashboard (home) ----
     if (metodo === 'GET' && path === '/') {
       const dash = await negocio.calcularDashboard(); // fecha cotacoes vencidas
