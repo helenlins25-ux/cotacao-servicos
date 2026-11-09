@@ -318,6 +318,7 @@ async function handler(req, res) {
     const sessao = auth.obterSessao(auth.lerCookie(req, 'sid'));
     views.definirUsuarioAtual(sessao ? { nome: sessao.nome, perfil: sessao.perfil, email: sessao.email } : null);
     views.definirModulo(path.startsWith('/leads') ? 'leads' : 'cotacao');
+    views.definirCaminho(path);
 
     // ---- GET /login : mostra a tela de login ----
     if (metodo === 'GET' && ehLogin) {

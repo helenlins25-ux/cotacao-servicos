@@ -15,12 +15,33 @@ function logoSvg() {
 export const contexto = new AsyncLocalStorage();
 export function definirUsuarioAtual(u) { const s = contexto.getStore(); if (s) s.usuario = u; }
 export function definirModulo(m) { const s = contexto.getStore(); if (s) s.modulo = m; }
+export function definirCaminho(p) { const s = contexto.getStore(); if (s) s.caminho = p; }
 
 // externo=true -> pagina vista pelo PARCEIRO (sem menu interno de navegacao).
 function layout(title, body, externo = false) {
   const ctx = contexto.getStore() || {};
   const _usuarioAtual = ctx.usuario || null;
   const modulo = ctx.modulo || 'cotacao';
+  const caminho = ctx.caminho || '';
+
+  // Item do menu lateral; "ativo" quando a pagina atual casa com a expressao.
+  const item = (href, icone, texto, re) =>
+    `<a href="${href}" class="${re.test(caminho) ? 'ativo' : ''}"><span class="ico">${icone}</span>${texto}</a>`;
+  const menuModulo = modulo === 'leads'
+    ? item('/leads/painel', '📈', 'Painel', /^\/leads\/painel$/)
+      + item('/leads', '🎯', 'Leads', /^\/leads(\/\d+.*)?$/)
+      + item('/leads/novo', '➕', 'Novo lead', /^\/leads\/novo$/)
+    : item('/', '📊', 'Dashboard', /^\/$/)
+      + item('/cotacoes', '📋', 'Cotações', /^\/cotacoes(\/\d+.*)?$/)
+      + item('/cotacoes/nova', '➕', 'Nova cotação', /^\/cotacoes\/nova$/)
+      + item('/financeiro', '💳', 'Financeiro', /^\/financeiro$/)
+      + item('/parceiros', '🤝', 'Parceiros', /^\/parceiros/);
+  const ehAdm = _usuarioAtual && _usuarioAtual.perfil === 'adm';
+  const rodapeLateral = `
+        ${_usuarioAtual ? `<div class="usuario">👤 ${esc(_usuarioAtual.nome)}<br><span>${ehAdm ? 'Administrador' : 'Comercial'}</span></div>` : ''}
+        ${ehAdm ? item('/usuarios', '👥', 'Usuários', /^\/usuarios/) : ''}
+        ${_usuarioAtual ? '<a href="/logout"><span class="ico">🚪</span>Sair</a>' : ''}`;
+
   return `<!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -95,8 +116,30 @@ function layout(title, body, externo = false) {
     footer { text-align:center; color:var(--cinza); font-size:12px; padding:24px; }
     /* seletor de modulos (Cotacao | Leads) */
     .modulos { display:flex; gap:4px; background:rgba(255,255,255,.07); padding:4px; border-radius:10px; }
-    header .modulos a { font-weight:700; padding:7px 14px; }
-    header .modulos a.ativo { background:var(--ouro); color:#111317; }
+    .modulos a { flex:1; text-align:center; color:#d8dce3; text-decoration:none; font-weight:700; font-size:14px; padding:8px 6px; border-radius:7px; }
+    .modulos a:hover { background:rgba(212,175,55,.15); color:#fff; }
+    .modulos a.ativo { background:var(--ouro); color:#111317; }
+
+    /* ===== MENU LATERAL (esquerda) ===== */
+    .app { display:flex; min-height:100vh; }
+    .sidebar { width:248px; flex:0 0 248px; position:sticky; top:0; height:100vh; overflow-y:auto;
+      display:flex; flex-direction:column; color:#fff; border-right:3px solid var(--ouro);
+      background:linear-gradient(180deg, var(--preto) 0%, var(--grafite) 100%); }
+    .sidebar .marca { padding:18px 16px 12px; display:flex; justify-content:center; }
+    .sidebar .marca img { height:64px !important; }
+    .sidebar .modulos { margin:4px 12px 14px; }
+    .sidebar nav { display:flex; flex-direction:column; gap:2px; padding:0 10px; }
+    .sidebar a { display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:8px;
+      color:#d8dce3; text-decoration:none; font-size:15px; }
+    .sidebar nav a:hover, .sidebar .rodape a:hover { background:rgba(212,175,55,.15); color:#fff; }
+    .sidebar nav a.ativo, .sidebar .rodape a.ativo { background:rgba(212,175,55,.22); color:var(--ouro-claro); font-weight:700; box-shadow:inset 3px 0 0 var(--ouro); }
+    .sidebar .ico { width:22px; text-align:center; flex:0 0 22px; }
+    .sidebar .rodape { margin-top:auto; padding:12px 10px 16px; border-top:1px solid rgba(255,255,255,.1); display:flex; flex-direction:column; gap:2px; }
+    .sidebar .usuario { font-size:13px; padding:4px 12px 10px; color:#e5e7eb; word-break:break-word; }
+    .sidebar .usuario span { color:#9aa3b2; font-size:12px; }
+    .conteudo { flex:1; min-width:0; display:flex; flex-direction:column; }
+    .conteudo .container { width:100%; flex:1; }
+    .topbar, .overlay { display:none; }
     /* etapas do funil de leads */
     .tag.etapa-novo { background:#e0e7ff; color:#3730a3; }
     .tag.etapa-em_contato { background:#dbeafe; color:#1e40af; }
@@ -107,13 +150,23 @@ function layout(title, body, externo = false) {
     .atrasado { color:#b91c1c; font-weight:700; }
     .historico { list-style:none; padding:0; margin:0; }
     .historico li { border-left:3px solid var(--ouro); padding:6px 0 6px 12px; margin-bottom:10px; }
-    @media (max-width: 640px) {
-      .modulos { width:100%; }
-      header .modulos a { flex:1; text-align:center; }
+    /* Celular/tablet estreito: o menu lateral vira uma gaveta aberta pelo botao de menu */
+    @media (max-width: 860px) {
+      .app { display:block; }
+      .sidebar { position:fixed; left:0; top:0; z-index:50; width:272px; max-width:85vw;
+        transform:translateX(-100%); transition:transform .22s ease; }
+      .sidebar.aberto { transform:none; }
+      .sidebar.aberto + .overlay { display:block; position:fixed; inset:0; z-index:45; background:rgba(0,0,0,.5); }
+      .topbar { display:flex; align-items:center; gap:12px; position:sticky; top:0; z-index:40;
+        padding:8px 14px; border-bottom:3px solid var(--ouro);
+        background:linear-gradient(135deg, var(--preto) 0%, var(--grafite) 100%); }
+      .topbar img { height:38px !important; }
+      .topbar .menu-btn { width:auto !important; padding:8px 14px; font-size:20px; line-height:1; }
     }
     /* na impressao, esconde elementos de navegacao/botoes */
     @media print {
-      header, footer, .no-print { display:none !important; }
+      header, footer, .sidebar, .topbar, .overlay, .no-print { display:none !important; }
+      .app { display:block; }
       .card { break-inside: avoid; border:1px solid #ccc; }
       body { background:#fff; }
     }
@@ -131,6 +184,8 @@ function layout(title, body, externo = false) {
       header nav { width:100%; gap:2px; }
       header nav a { flex:1 1 auto; text-align:center; font-size:14px; padding:10px 6px; background:rgba(255,255,255,.06); }
       .container { padding:0 12px; margin:14px auto; }
+      /* quando sobra um card sozinho na ultima linha, ele ocupa a linha toda */
+      .kpis > .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
       .card { padding:16px; border-radius:12px; }
       h1 { font-size:20px; }
       /* cada campo ocupa a linha inteira no celular */
@@ -145,39 +200,48 @@ function layout(title, body, externo = false) {
   </style>
 </head>
 <body>
+  ${externo ? `
   <header>
-    <div class="marca">
-      ${logoSvg()}
-    </div>
-    ${externo ? '' : `
-    <div class="modulos">
-      <a href="/" class="${modulo === 'cotacao' ? 'ativo' : ''}">📦 Cotação</a>
-      <a href="/leads/painel" class="${modulo === 'leads' ? 'ativo' : ''}">🎯 Leads</a>
-    </div>
-    <nav>
-      ${modulo === 'leads' ? `
-      <a href="/leads/painel">Painel</a>
-      <a href="/leads">Leads</a>
-      <a href="/leads/novo">Novo lead</a>
-      ` : `
-      <a href="/">Dashboard</a>
-      <a href="/cotacoes">Cotações</a>
-      <a href="/cotacoes/nova">Nova cotação</a>
-      <a href="/financeiro">Financeiro</a>
-      <a href="/parceiros">Parceiros</a>
-      `}
-      ${_usuarioAtual && _usuarioAtual.perfil === 'adm' ? '<a href="/usuarios">Usuários</a>' : ''}
-      ${_usuarioAtual ? `<a href="/logout" style="margin-left:auto;background:rgba(255,255,255,.08)">Sair (${esc(_usuarioAtual.nome.split(' ')[0])})</a>` : ''}
-    </nav>`}
+    <div class="marca">${logoSvg()}</div>
   </header>
   <div class="container">${body}</div>
-  <footer>Stractton Group · Sistema de Cotação de Serviços de Transporte</footer>
+  <footer>Stractton Group · Plataforma de Gestão</footer>
+  ` : `
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="marca">${logoSvg()}</div>
+      <div class="modulos">
+        <a href="/" class="${modulo === 'cotacao' ? 'ativo' : ''}">📦 Cotação</a>
+        <a href="/leads/painel" class="${modulo === 'leads' ? 'ativo' : ''}">🎯 Leads</a>
+      </div>
+      <nav>${menuModulo}</nav>
+      <div class="rodape">${rodapeLateral}
+      </div>
+    </aside>
+    <div class="overlay" onclick="toggleMenu()"></div>
+    <div class="conteudo">
+      <div class="topbar">
+        <button type="button" class="menu-btn" onclick="toggleMenu()" aria-label="Abrir menu">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        ${logoSvg()}
+      </div>
+      <div class="container">${body}</div>
+      <footer>Stractton Group · Plataforma de Gestão</footer>
+    </div>
+  </div>
+  `}
   <script>
     // registra o service worker (habilita "Instalar app" no celular)
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('/sw.js').catch(function () {});
       });
+    }
+    // abre/fecha o menu lateral no celular
+    function toggleMenu() {
+      var s = document.getElementById('sidebar');
+      if (s) s.classList.toggle('aberto');
     }
     // alterna visibilidade do campo de senha (olhinho)
     function toggleSenha(btn) {
@@ -646,7 +710,7 @@ export function paginaLeadsPainel(p) {
     <br>
     <div class="card">
       <h2>Funil de vendas</h2>
-      <div class="kpis">${kpiEtapas}</div>
+      <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(125px,1fr))">${kpiEtapas}</div>
     </div>
     <div class="card">
       <h2>⚠️ Follow-ups atrasados (${p.atrasados.length})</h2>
