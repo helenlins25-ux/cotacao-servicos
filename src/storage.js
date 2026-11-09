@@ -16,6 +16,7 @@ export async function enviarArquivo(nome, buffer, contentType) {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
+      apikey: key, // compat com chaves novas (sb_secret_...) e legadas (service_role)
       'Content-Type': contentType || 'application/octet-stream',
       'x-upsert': 'true',
     },
