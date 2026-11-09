@@ -211,8 +211,8 @@ function layout(title, body, externo = false) {
     <aside class="sidebar" id="sidebar">
       <div class="marca">${logoSvg()}</div>
       <div class="modulos">
-        <a href="/" class="${modulo === 'cotacao' ? 'ativo' : ''}">📦 Cotação</a>
         <a href="/leads/painel" class="${modulo === 'leads' ? 'ativo' : ''}">🎯 Leads</a>
+        <a href="/" class="${modulo === 'cotacao' ? 'ativo' : ''}">📦 Cotação</a>
       </div>
       <nav>${menuModulo}</nav>
       <div class="rodape">${rodapeLateral}
