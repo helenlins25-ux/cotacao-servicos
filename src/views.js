@@ -316,6 +316,11 @@ export function paginaNovaCotacao(parceiros, comerciais) {
 
 // ---------------- LISTA DE COTACOES ----------------
 export function paginaListaCotacoes(cotacoes) {
+  const veiculoCel = (c) => {
+    if (c.status !== 'fechada') return '<span class="muted">—</span>';
+    if (c.veiculo_placa) return `<span class="tag fechada">🚚 ${c.veiculo_placa}</span>`;
+    return '<span class="tag em_andamento">⏳ Aguardando</span>';
+  };
   const linhas = cotacoes.map(c => `
     <tr>
       <td><a href="/cotacoes/${c.id}">#${c.id}</a></td>
@@ -324,8 +329,9 @@ export function paginaListaCotacoes(cotacoes) {
       <td>${c.respondidas}/${c.convidados}</td>
       <td>${fmtData(c.prazo_resposta)}</td>
       <td><span class="tag ${c.status}">${rotuloStatus[c.status] || c.status}</span></td>
+      <td>${veiculoCel(c)}</td>
       <td>${c.status === 'fechada' ? fmtMoeda(c.faturamento) : '<span class="muted">—</span>'}</td>
-    </tr>`).join('') || '<tr><td colspan="7" class="muted">Nenhuma cotação criada ainda.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="8" class="muted">Nenhuma cotação criada ainda.</td></tr>';
 
   return layout('Cotações', `
     <h1>Cotações</h1>
@@ -333,7 +339,7 @@ export function paginaListaCotacoes(cotacoes) {
       <a class="btn" href="/cotacoes/nova">+ Nova cotação</a>
       <br><br>
       <div class="tabela-wrap"><table>
-        <thead><tr><th>#</th><th>Trajeto</th><th>Comercial</th><th>Respostas</th><th>Prazo</th><th>Status</th><th>Faturamento</th></tr></thead>
+        <thead><tr><th>#</th><th>Trajeto</th><th>Comercial</th><th>Respostas</th><th>Prazo</th><th>Status</th><th>Veículo</th><th>Faturamento</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table></div>
     </div>
