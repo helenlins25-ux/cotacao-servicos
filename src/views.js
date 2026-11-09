@@ -83,6 +83,12 @@ function layout(title, body, externo = false) {
     .kpi.roxo { border-top:3px solid var(--ouro); }
     a { color:#b8860b; }
     footer { text-align:center; color:var(--cinza); font-size:12px; padding:24px; }
+    /* na impressao, esconde elementos de navegacao/botoes */
+    @media print {
+      header, footer, .no-print { display:none !important; }
+      .card { break-inside: avoid; border:1px solid #ccc; }
+      body { background:#fff; }
+    }
     /* campo de senha com botao "olhinho" */
     .senha-wrap { position:relative; }
     .senha-wrap input { padding-right:46px; }
@@ -189,6 +195,7 @@ export function paginaDashboard(d) {
       <td>${m.total}</td>
       <td>${m.fechadas}</td>
       <td>${fmtMoeda(m.faturamento)}</td>
+      <td>${fmtMoeda(m.liquido)}</td>
     </tr>`).join('');
 
   return layout('Dashboard', `
@@ -198,7 +205,12 @@ export function paginaDashboard(d) {
       <div class="kpi azul"><div class="n">${d.contagem.aberta || 0}</div><div class="l">Abertas</div></div>
       <div class="kpi amar"><div class="n">${d.contagem.em_andamento || 0}</div><div class="l">Em andamento</div></div>
       <div class="kpi verd"><div class="n">${d.contagem.fechada || 0}</div><div class="l">Fechadas</div></div>
+    </div>
+    <br>
+    <div class="kpis">
       <div class="kpi roxo"><div class="n">${fmtMoeda(d.faturamentoTotal)}</div><div class="l">Faturamento total</div></div>
+      <div class="kpi verd"><div class="n">${fmtMoeda(d.faturamentoLiquido)}</div><div class="l">Faturamento líquido</div></div>
+      <div class="kpi amar"><div class="n">${fmtMoeda(d.bonificacoesTotal || 0)}</div><div class="l">Bonificações pagas</div></div>
     </div>
     <br>
     <div class="row">
@@ -217,7 +229,7 @@ export function paginaDashboard(d) {
     <div class="card">
       <h2>Desempenho por comercial</h2>
       <div class="tabela-wrap"><table>
-        <thead><tr><th>Comercial</th><th>Cotações</th><th>Fechadas</th><th>Faturamento</th></tr></thead>
+        <thead><tr><th>Comercial</th><th>Cotações</th><th>Fechadas</th><th>Faturamento</th><th>Líquido</th></tr></thead>
         <tbody>${linhasComercial}</tbody>
       </table></div>
     </div>
@@ -393,11 +405,16 @@ export function paginaDetalheCotacao(c, convites, info) {
         <div><label>Comissão variável</label>${fmtMoeda(c.comissao_variavel)}</div>
         <div><label>Faturamento total</label><span class="big">${fmtMoeda(faturamento)}</span></div>
       </div>
+      <div class="row">
+        <div><label>Bonificação ao parceiro</label>${fmtMoeda(c.bonificacao)}</div>
+        <div><label>Faturamento líquido</label><span class="big" style="color:#166534">${fmtMoeda(faturamento - Number(c.bonificacao || 0))}</span></div>
+        <div></div>
+      </div>
       <form method="post" action="/cotacoes/${c.id}/comissao">
-        <label>Atualizar comissão variável (R$)</label>
         <div class="row">
-          <div><input name="comissao_variavel" type="number" step="0.01" min="0" value="${Number(c.comissao_variavel || 0)}"></div>
-          <div style="flex:0"><br><button type="submit">Salvar comissão</button></div>
+          <div><label>Atualizar comissão variável (R$)</label><input name="comissao_variavel" type="number" step="0.01" min="0" value="${Number(c.comissao_variavel || 0)}"></div>
+          <div><label>Bonificação ao parceiro (R$)</label><input name="bonificacao" type="number" step="0.01" min="0" value="${Number(c.bonificacao || 0)}"></div>
+          <div style="flex:0"><br><button type="submit">Salvar</button></div>
         </div>
       </form>
       <hr style="border:none;border-top:1px solid var(--borda);margin:16px 0">
@@ -427,7 +444,11 @@ export function paginaDetalheCotacao(c, convites, info) {
   }
 
   return layout(`Cotação #${c.id}`, `
-    <h1>Cotação #${c.id} <span class="tag ${status}">${rotuloStatus[status] || status}</span></h1>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <h1 style="margin:0">Cotação #${c.id} <span class="tag ${status}">${rotuloStatus[status] || status}</span></h1>
+      <a class="btn" style="background:#475569" href="/cotacoes/${c.id}/relatorio" target="_blank">📄 Ver relatório (sem financeiro)</a>
+    </div>
+    <br>
     ${aviso ? `<div class="${aviso.tipo}">${aviso.texto}</div><br>` : ''}
     <div class="card">
       <div class="row">
@@ -456,6 +477,75 @@ export function paginaDetalheCotacao(c, convites, info) {
         <tbody>${linhas}</tbody>
       </table></div>
     </div>
+  `);
+}
+
+// ---------------- RELATORIO DA COTACAO (sem bloco financeiro) ----------------
+// Pagina para compartilhar/imprimir. NAO mostra faturamento/comissao/bonificacao.
+export function paginaRelatorio(c, convites, info) {
+  const { status, vencedorNome } = info;
+  const linhas = convites.map(v => {
+    const ehVencedor = c.parceiro_vencedor && v.parceiro_id === c.parceiro_vencedor;
+    return `
+    <tr${ehVencedor ? ' style="background:#f0fdf4"' : ''}>
+      <td>${v.nome} ${ehVencedor ? '🏆' : ''}</td>
+      <td>${v.respondido_em ? fmtMoeda(v.valor_cotado) : '—'}</td>
+      <td>${v.prazo_entrega || '—'}</td>
+      <td>${v.comentario || '—'}</td>
+      <td>${v.respondido_em ? fmtData(v.respondido_em) : 'aguardando'}</td>
+    </tr>`;
+  }).join('');
+
+  const andamento = c.veiculo_preenchido_em ? `
+    <div class="card">
+      <h2>🚚 Veículo e acompanhamento</h2>
+      <div class="row">
+        <div><label>Placa</label>${c.veiculo_placa || '—'}</div>
+        <div><label>Motorista</label>${c.motorista_nome || '—'}</div>
+        <div><label>Telefone</label>${c.motorista_telefone || '—'}</div>
+      </div>
+      <div class="row">
+        <div><label>Coletou</label>${c.coletado === 'sim' ? '✅ Sim' : c.coletado === 'nao' ? '❌ Não' : '—'}</div>
+        <div><label>Entregou</label>${c.entregue === 'sim' ? '✅ Sim' : c.entregue === 'nao' ? '❌ Não' : '—'}</div>
+        <div><label>Comprovante</label>${c.comprovante_url ? `<a href="${c.comprovante_url}" target="_blank">📎 Ver anexo</a>` : '—'}</div>
+      </div>
+    </div>` : '';
+
+  return layout(`Relatório — Cotação #${c.id}`, `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <h1 style="margin:0">Relatório — Cotação #${c.id} <span class="tag ${status}">${rotuloStatus[status] || status}</span></h1>
+      <button onclick="window.print()" class="btn no-print">🖨️ Imprimir / Salvar PDF</button>
+    </div>
+    <br>
+    <div class="card">
+      <h2>Dados da cotação</h2>
+      <div class="row">
+        <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
+        <div><label>Produto</label>${c.produto || '—'}</div>
+        <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
+        <div><label>Comercial responsável</label>${c.comercial || '—'}</div>
+      </div>
+      <div class="row">
+        <div><label>Peso da carga</label>${c.peso_kg} kg</div>
+        <div><label>Volume</label>${c.volume || '—'}</div>
+        <div><label>Valor da mercadoria</label>${fmtMoeda(c.valor_mercadoria)}</div>
+      </div>
+      <div class="row">
+        <div><label>Data da coleta</label>${fmtDataSimples(c.data_coleta)}</div>
+        <div><label>Data da entrega</label>${c.data_entrega ? fmtDataSimples(c.data_entrega) : 'A combinar'}</div>
+        <div><label>Prazo para resposta</label>${fmtData(c.prazo_resposta)}</div>
+      </div>
+      ${c.observacoes ? `<label>Observações</label><div class="muted">${c.observacoes}</div>` : ''}
+      ${vencedorNome ? `<label>Parceiro vencedor</label>🏆 ${vencedorNome} — ${fmtMoeda(c.valor_fechado)}` : ''}
+    </div>
+    <div class="card">
+      <h2>Respostas dos parceiros</h2>
+      <div class="tabela-wrap"><table>
+        <thead><tr><th>Parceiro</th><th>Valor cotado</th><th>Prazo entrega</th><th>Comentário</th><th>Respondido em</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table></div>
+    </div>
+    ${andamento}
   `);
 }
 

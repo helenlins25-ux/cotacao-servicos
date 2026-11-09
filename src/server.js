@@ -449,7 +449,7 @@ async function handler(req, res) {
     let m = path.match(/^\/cotacoes\/(\d+)\/comissao$/);
     if (metodo === 'POST' && m) {
       const body = await lerBody(req);
-      await cotacoes.atualizarComissao(m[1], Number(body.comissao_variavel || 0));
+      await cotacoes.atualizarComissao(m[1], Number(body.comissao_variavel || 0), Number(body.bonificacao || 0));
       return redirect(res, `/cotacoes/${m[1]}`);
     }
 
@@ -515,6 +515,23 @@ async function handler(req, res) {
       else if (url.searchParams.get('cancelado') === '1') aviso = { tipo: 'ok', texto: '✅ Convite do parceiro cancelado.' };
       else if (url.searchParams.get('renotificado') === '1') aviso = { tipo: 'ok', texto: '✅ Notificação de resultado reenviada aos parceiros.' };
       return html(res, views.paginaDetalheCotacao(c, convComNome, { status, faturamento, vencedorNome, percFixo: negocio.PERC_FIXO, expirada: negocio.expirada(c), aviso }));
+    }
+
+    // ---- Relatorio da cotacao (SEM bloco financeiro) ----
+    let mRel = path.match(/^\/cotacoes\/(\d+)\/relatorio$/);
+    if (metodo === 'GET' && mRel) {
+      let c = await cotacoes.obter(mRel[1]);
+      if (!c) return html(res, views.paginaSimples('Não encontrada', 'Cotação não encontrada.'), 404);
+      c = await negocio.fecharSeVencido(c);
+      const convs = await convites.porCotacao(c.id);
+      const convComNome = [];
+      for (const v of convs) {
+        const p = await parceiros.obter(v.parceiro_id);
+        convComNome.push({ ...v, nome: p?.nome || '?' });
+      }
+      const status = negocio.statusDe(c, convs);
+      const vencedorNome = c.parceiro_vencedor ? (await parceiros.obter(c.parceiro_vencedor))?.nome : null;
+      return html(res, views.paginaRelatorio(c, convComNome, { status, vencedorNome }));
     }
 
     // ---- Reenviar notificacao de resultado aos parceiros (cotacao fechada) ----

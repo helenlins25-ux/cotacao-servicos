@@ -23,12 +23,17 @@ export function statusDe(cotacao, listaConvites) {
   return temResposta ? 'em_andamento' : 'aberta';
 }
 
-// Faturamento de uma cotacao fechada = 2% do valor fechado + comissao variavel.
+// Faturamento TOTAL de uma cotacao fechada = 2% do valor fechado + comissao variavel.
 export function faturamentoDe(cotacao) {
   if (!cotacao.fechado_em || cotacao.valor_fechado == null) return 0;
   const fixo = Number(cotacao.valor_fechado) * PERC_FIXO;
   const comissao = Number(cotacao.comissao_variavel || 0);
   return fixo + comissao;
+}
+
+// Faturamento LIQUIDO = total - bonificacao paga ao parceiro.
+export function faturamentoLiquidoDe(cotacao) {
+  return faturamentoDe(cotacao) - Number(cotacao.bonificacao || 0);
 }
 
 // Fecha automaticamente a cotacao pelo MENOR valor, se o prazo venceu e ainda
@@ -97,13 +102,15 @@ export async function calcularDashboard() {
 
   // Parceiro com mais fechamentos (vitorias)
   const fechamentosPorParceiro = {};
-  let faturamentoTotal = 0;
+  let faturamentoTotal = 0, bonificacoesTotal = 0;
   for (const c of lista) {
     if (c.status === 'fechada' && c.parceiro_vencedor) {
       fechamentosPorParceiro[c.parceiro_vencedor] = (fechamentosPorParceiro[c.parceiro_vencedor] || 0) + 1;
       faturamentoTotal += c.faturamento;
+      bonificacoesTotal += Number(c.bonificacao || 0);
     }
   }
+  const faturamentoLiquido = faturamentoTotal - bonificacoesTotal;
   let parceiroTop = null, maxFech = 0;
   for (const [pid, n] of Object.entries(fechamentosPorParceiro)) {
     if (n > maxFech) { maxFech = n; parceiroTop = Number(pid); }
@@ -111,14 +118,15 @@ export async function calcularDashboard() {
 
   // Metricas por comercial
   const porComercial = {};
-  for (const nome of COMERCIAIS) porComercial[nome] = { total: 0, fechadas: 0, faturamento: 0 };
+  for (const nome of COMERCIAIS) porComercial[nome] = { total: 0, fechadas: 0, faturamento: 0, liquido: 0 };
   for (const c of lista) {
     const com = c.comercial;
-    if (!porComercial[com]) porComercial[com] = { total: 0, fechadas: 0, faturamento: 0 };
+    if (!porComercial[com]) porComercial[com] = { total: 0, fechadas: 0, faturamento: 0, liquido: 0 };
     porComercial[com].total++;
     if (c.status === 'fechada') {
       porComercial[com].fechadas++;
       porComercial[com].faturamento += c.faturamento;
+      porComercial[com].liquido += (c.faturamento - Number(c.bonificacao || 0));
     }
   }
 
@@ -129,6 +137,8 @@ export async function calcularDashboard() {
     qtdRespostas,
     parceiroTop: parceiroTop ? { nome: nomeParceiro(parceiroTop), fechamentos: maxFech } : null,
     faturamentoTotal,
+    faturamentoLiquido,
+    bonificacoesTotal,
     porComercial,
     lista,
   };
