@@ -394,6 +394,23 @@ export function paginaDetalheCotacao(c, convites, info) {
           <div style="flex:0"><br><button type="submit">Salvar comissão</button></div>
         </div>
       </form>
+      <hr style="border:none;border-top:1px solid var(--borda);margin:16px 0">
+      <label>Notificação de resultado aos parceiros</label>
+      <p class="muted">${c.resultado_notificado_em ? '✅ Parceiros já notificados do resultado em ' + fmtData(c.resultado_notificado_em) + '.' : 'Ainda não notificado (será enviado automaticamente ao abrir a cotação).'}</p>
+      <form method="post" action="/cotacoes/${c.id}/notificar" style="margin:0">
+        <button type="submit">📣 ${c.resultado_notificado_em ? 'Reenviar' : 'Enviar'} notificação de resultado</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>🚚 Dados do veículo da viagem</h2>
+      ${c.veiculo_preenchido_em ? `
+        <div class="row">
+          <div><label>Placa</label>${c.veiculo_placa || '—'}</div>
+          <div><label>Motorista</label>${c.motorista_nome || '—'}</div>
+          <div><label>Telefone</label>${c.motorista_telefone || '—'}</div>
+        </div>
+        <p class="muted">Preenchido pelo parceiro vencedor em ${fmtData(c.veiculo_preenchido_em)}.</p>
+      ` : '<p class="muted">Aguardando o parceiro vencedor informar os dados do veículo (via link enviado por e-mail).</p>'}
     </div>`;
   }
 
@@ -485,6 +502,49 @@ export function paginaRespostaParceiro(c, convite, expirada) {
 
 export function paginaSimples(titulo, html, externo = false) {
   return layout(titulo, `<div class="card">${html}</div>`, externo);
+}
+
+// ---------------- VEICULO (vencedor preenche — EXTERNO) ----------------
+export function paginaVeiculo(c, info) {
+  const jaPreenchido = c.veiculo_preenchido_em;
+  const cabecalho = `
+    <div class="card">
+      <h1>🎉 Você ganhou a cotação #${c.id}!</h1>
+      <p>Olá <strong>${info.nome}</strong>, sua proposta foi selecionada para:</p>
+      <div class="row">
+        <div><label>Trajeto</label>${c.origem} → ${c.destino}</div>
+        <div><label>Tipo de veículo</label>${c.tipo_veiculo}</div>
+      </div>
+      <div class="row">
+        <div><label>Produto</label>${c.produto || '—'}</div>
+        <div><label>Peso da carga</label>${c.peso_kg} kg</div>
+        <div><label>Data da coleta</label>${fmtDataSimples(c.data_coleta)}</div>
+      </div>
+    </div>`;
+
+  if (jaPreenchido) {
+    return layout('Dados registrados', cabecalho + `
+      <div class="card"><div class="ok">✅ Os dados do veículo já foram registrados:
+        <br><br><strong>Placa:</strong> ${c.veiculo_placa || '—'}
+        <br><strong>Motorista:</strong> ${c.motorista_nome || '—'}
+        <br><strong>Telefone:</strong> ${c.motorista_telefone || '—'}
+        <br><br>Obrigado!</div></div>
+    `, true);
+  }
+
+  return layout('Dados do veículo', cabecalho + `
+    <div class="card">
+      <h2>Informe os dados do veículo e motorista</h2>
+      <form method="post" action="/veiculo/${info.token}">
+        <div class="row">
+          <div><label>Placa do veículo *</label><input name="placa" required placeholder="ABC1D23"></div>
+          <div><label>Nome do motorista</label><input name="motorista" placeholder="Nome completo"></div>
+          <div><label>Telefone do motorista</label><input name="telefone" placeholder="(00) 00000-0000"></div>
+        </div>
+        <br><button type="submit">Enviar dados</button>
+      </form>
+    </div>
+  `, true);
 }
 
 // ---------------- LOGIN ----------------

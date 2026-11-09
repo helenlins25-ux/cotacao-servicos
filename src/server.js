@@ -93,6 +93,64 @@ async function enviarCotacaoAoParceiro(req, c, parceiro, tokenConvite) {
   }
 }
 
+// Notifica os parceiros do RESULTADO da cotacao fechada:
+// - vencedor recebe "ganhou" + link para preencher dados do veiculo
+// - demais recebem "nao foi desta vez"
+// Marca a cotacao como notificada para nao reenviar automaticamente.
+async function notificarResultado(req, c) {
+  const convs = await convites.porCotacao(c.id);
+  const base = baseUrlDe(req);
+  for (const v of convs) {
+    const p = await parceiros.obter(v.parceiro_id);
+    if (!p) continue;
+    const ehVencedor = c.parceiro_vencedor && v.parceiro_id === c.parceiro_vencedor;
+    try {
+      if (ehVencedor) {
+        const link = `${base}/veiculo/${v.token}`;
+        await enviarEmail({
+          to: p.email,
+          subject: `✅ Você ganhou a cotação #${c.id}: ${c.origem} → ${c.destino}`,
+          html: `<p>Parabéns, ${p.nome}!</p>
+            <p>Sua proposta foi <strong>selecionada</strong> para a cotação <strong>#${c.id}</strong> (${c.origem} → ${c.destino}).</p>
+            <p>Para confirmar e darmos sequência, informe os <strong>dados do veículo e motorista</strong> que farão a viagem, no link abaixo:</p>
+            <p><a href="${link}">${link}</a></p>
+            <p>Obrigado por trabalhar com a Stractton Group!</p>`,
+          text: `Parabens, ${p.nome}! Sua proposta foi selecionada para a cotacao #${c.id} (${c.origem} -> ${c.destino}).\nInforme os dados do veiculo/motorista no link:\n${link}`,
+        });
+      } else if (v.respondido_em) {
+        // so avisa quem realmente enviou proposta
+        await enviarEmail({
+          to: p.email,
+          subject: `Resultado da cotação #${c.id}: ${c.origem} → ${c.destino}`,
+          html: `<p>Olá, ${p.nome}.</p>
+            <p>Agradecemos sua proposta na cotação <strong>#${c.id}</strong> (${c.origem} → ${c.destino}).</p>
+            <p>Desta vez a cotação foi fechada com outro parceiro. Contamos com você nas próximas oportunidades!</p>
+            <p>Atenciosamente,<br>Stractton Group</p>`,
+          text: `Ola, ${p.nome}. Agradecemos sua proposta na cotacao #${c.id}. Desta vez foi fechada com outro parceiro. Contamos com voce nas proximas!`,
+        });
+      }
+    } catch (e) {
+      console.error(`[EMAIL] Falha ao notificar resultado para ${p.email} (cotacao #${c.id}):`, e.message);
+    }
+  }
+  await cotacoes.marcarNotificado(c.id);
+}
+
+// Varre as cotacoes e notifica automaticamente as que FECHARAM e ainda nao foram
+// notificadas (tem vencedor e fechado_em, mas sem resultado_notificado_em).
+async function notificarFechamentosPendentes(req) {
+  try {
+    const lista = await cotacoes.listar();
+    for (const c of lista) {
+      if (c.fechado_em && c.parceiro_vencedor && !c.resultado_notificado_em) {
+        await notificarResultado(req, c);
+      }
+    }
+  } catch (e) {
+    console.error('[NOTIF] Erro ao notificar fechamentos pendentes:', e.message);
+  }
+}
+
 function html(res, body, status = 200) {
   res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(body);
@@ -172,8 +230,8 @@ async function handler(req, res) {
     }
 
     // ======== AUTENTICACAO ========
-    // Rotas publicas (sem login): link do parceiro e a propria tela de login.
-    const ehRotaParceiro = /^\/responder\//.test(path);
+    // Rotas publicas (sem login): link do parceiro (responder + veiculo) e a tela de login.
+    const ehRotaParceiro = /^\/responder\//.test(path) || /^\/veiculo\//.test(path);
     const ehLogin = (path === '/login');
 
     // Sessao atual (se houver)
@@ -243,13 +301,15 @@ async function handler(req, res) {
 
     // ---- Dashboard (home) ----
     if (metodo === 'GET' && path === '/') {
-      const dash = await negocio.calcularDashboard();
+      const dash = await negocio.calcularDashboard(); // fecha cotacoes vencidas
+      await notificarFechamentosPendentes(req);       // notifica os resultados (auto)
       return html(res, views.paginaDashboard(dash));
     }
 
     // ---- Lista de cotacoes ----
     if (metodo === 'GET' && path === '/cotacoes') {
       const lista = await negocio.carregarCotacoesProcessadas();
+      await notificarFechamentosPendentes(req);
       return html(res, views.paginaListaCotacoes(lista));
     }
 
@@ -373,6 +433,11 @@ async function handler(req, res) {
       let c = await cotacoes.obter(m[1]);
       if (!c) return html(res, views.paginaSimples('Não encontrada', 'Cotação não encontrada.'), 404);
       c = await negocio.fecharSeVencido(c); // fecha pelo menor valor se venceu
+      // notifica o resultado automaticamente se acabou de fechar e ainda nao notificou
+      if (c.fechado_em && c.parceiro_vencedor && !c.resultado_notificado_em) {
+        await notificarResultado(req, c);
+        c = await cotacoes.obter(m[1]); // recarrega com resultado_notificado_em
+      }
       const convs = await convites.porCotacao(c.id);
       const convComNome = [];
       for (const v of convs) {
@@ -382,12 +447,54 @@ async function handler(req, res) {
       const status = negocio.statusDe(c, convs);
       const faturamento = negocio.faturamentoDe(c);
       const vencedorNome = c.parceiro_vencedor ? (await parceiros.obter(c.parceiro_vencedor))?.nome : null;
-      // mensagens de feedback (reenvio/cancelamento)
+      // mensagens de feedback (reenvio/cancelamento/notificacao)
       let aviso = null;
       if (url.searchParams.get('reenviado') === '1') aviso = { tipo: 'ok', texto: '✅ Cotação reenviada ao parceiro por e-mail.' };
       else if (url.searchParams.get('reenviado') === 'falha') aviso = { tipo: 'warn', texto: '⚠️ Não foi possível enviar o e-mail (o link continua válido no painel).' };
       else if (url.searchParams.get('cancelado') === '1') aviso = { tipo: 'ok', texto: '✅ Convite do parceiro cancelado.' };
+      else if (url.searchParams.get('renotificado') === '1') aviso = { tipo: 'ok', texto: '✅ Notificação de resultado reenviada aos parceiros.' };
       return html(res, views.paginaDetalheCotacao(c, convComNome, { status, faturamento, vencedorNome, percFixo: negocio.PERC_FIXO, expirada: negocio.expirada(c), aviso }));
+    }
+
+    // ---- Reenviar notificacao de resultado aos parceiros (cotacao fechada) ----
+    let mRenotif = path.match(/^\/cotacoes\/(\d+)\/notificar$/);
+    if (metodo === 'POST' && mRenotif) {
+      const c = await cotacoes.obter(mRenotif[1]);
+      if (!c || !c.fechado_em) {
+        return html(res, views.paginaSimples('Erro', 'Só é possível notificar cotações fechadas. <a href="/cotacoes">Voltar</a>'), 409);
+      }
+      await notificarResultado(req, c);
+      return redirect(res, `/cotacoes/${mRenotif[1]}?renotificado=1`);
+    }
+
+    // ---- Pagina do vencedor: preencher dados do veiculo (EXTERNO, via token) ----
+    let mVeicGet = path.match(/^\/veiculo\/([a-f0-9]+)$/i);
+    if (metodo === 'GET' && mVeicGet) {
+      const convite = await convites.porToken(mVeicGet[1]);
+      if (!convite) return html(res, views.paginaSimples('Link inválido', 'Este link não existe.', true), 404);
+      let c = await cotacoes.obter(convite.cotacao_id);
+      c = await negocio.fecharSeVencido(c);
+      // so o vencedor pode preencher
+      if (!c.fechado_em || c.parceiro_vencedor !== convite.parceiro_id) {
+        return html(res, views.paginaSimples('Indisponível', 'Esta cotação ainda não foi fechada com você, ou não está mais disponível.', true), 403);
+      }
+      const p = await parceiros.obter(convite.parceiro_id);
+      return html(res, views.paginaVeiculo(c, { nome: p?.nome || '', token: convite.token }));
+    }
+    // ---- Salvar dados do veiculo (POST, EXTERNO) ----
+    if (metodo === 'POST' && mVeicGet) {
+      const convite = await convites.porToken(mVeicGet[1]);
+      if (!convite) return html(res, views.paginaSimples('Link inválido', 'Este link não existe.', true), 404);
+      let c = await cotacoes.obter(convite.cotacao_id);
+      if (!c.fechado_em || c.parceiro_vencedor !== convite.parceiro_id) {
+        return html(res, views.paginaSimples('Indisponível', 'Esta cotação não está disponível para preenchimento.', true), 403);
+      }
+      const body = await lerBody(req);
+      if (!body.placa) {
+        return html(res, views.paginaSimples('Erro', 'Informe ao menos a placa do veículo. <a href="/veiculo/' + convite.token + '">Voltar</a>', true), 400);
+      }
+      await cotacoes.salvarVeiculo(c.id, { placa: body.placa, motorista: body.motorista, telefone: body.telefone });
+      return html(res, views.paginaSimples('Dados enviados', '✅ Dados do veículo registrados com sucesso. Obrigado!', true), 200);
     }
 
     // ---- Pagina de resposta do parceiro (GET) ----

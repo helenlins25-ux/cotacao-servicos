@@ -31,6 +31,11 @@ export async function inicializarBanco() {
       valor_fechado      NUMERIC,
       comissao_variavel  NUMERIC DEFAULT 0,
       fechado_em         TIMESTAMPTZ,
+      resultado_notificado_em TIMESTAMPTZ,
+      veiculo_placa      TEXT,
+      motorista_nome     TEXT,
+      motorista_telefone TEXT,
+      veiculo_preenchido_em TIMESTAMPTZ,
       criado_em          TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
@@ -39,6 +44,11 @@ export async function inicializarBanco() {
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS volume TEXT`);
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS data_coleta DATE`);
   await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS data_entrega DATE`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS resultado_notificado_em TIMESTAMPTZ`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS veiculo_placa TEXT`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS motorista_nome TEXT`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS motorista_telefone TEXT`);
+  await query(`ALTER TABLE cotacoes ADD COLUMN IF NOT EXISTS veiculo_preenchido_em TIMESTAMPTZ`);
   await query(`
     CREATE TABLE IF NOT EXISTS convites (
       id             SERIAL PRIMARY KEY,
@@ -112,6 +122,14 @@ export const cotacoes = {
     )).rows[0],
   atualizarComissao: async (id, comissao) =>
     (await query('UPDATE cotacoes SET comissao_variavel = $2 WHERE id = $1 RETURNING *', [Number(id), comissao || 0])).rows[0],
+  marcarNotificado: async (id) =>
+    (await query('UPDATE cotacoes SET resultado_notificado_em = now() WHERE id = $1 RETURNING *', [Number(id)])).rows[0],
+  salvarVeiculo: async (id, { placa, motorista, telefone }) =>
+    (await query(
+      `UPDATE cotacoes SET veiculo_placa = $2, motorista_nome = $3, motorista_telefone = $4, veiculo_preenchido_em = now()
+       WHERE id = $1 RETURNING *`,
+      [Number(id), placa || null, motorista || null, telefone || null]
+    )).rows[0],
 };
 
 // ---------- Convites ----------
