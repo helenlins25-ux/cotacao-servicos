@@ -28,6 +28,9 @@ function baseUrlDe(req) {
   return BASE_URL;
 }
 
+// false enquanto o banco nao esta pronto (ex.: projeto do Supabase pausado). Ver prepararBancoComTentativas().
+let bancoPronto = false;
+
 const token = () => randomBytes(18).toString('hex');
 
 // Fuso horario da empresa (Brasilia = UTC-3). Configuravel via TZ_OFFSET_HORAS.
@@ -307,6 +310,13 @@ async function handler(req, res) {
       }
       res.writeHead(404);
       return res.end('not found');
+    }
+
+    // Banco ainda indisponivel: responde 503 com mensagem clara (nao derruba o servico).
+    if (!bancoPronto) {
+      res.setHeader('Retry-After', '15');
+      return html(res, views.paginaSimples('Sistema temporariamente indisponível',
+        '⏳ Não foi possível acessar o banco de dados no momento. O sistema está tentando reconectar automaticamente. Aguarde alguns instantes e atualize a página.', true), 503);
     }
 
     // ======== AUTENTICACAO ========
@@ -830,7 +840,8 @@ async function handler(req, res) {
 }
 
 // ---- Inicializacao ----
-async function iniciar() {
+// Prepara o banco (tabelas, migracoes e 1o ADM). Pode falhar se o banco estiver fora do ar.
+async function prepararBanco() {
   await inicializarBanco();
 
   // Cria/garante o primeiro ADM a partir das variaveis de ambiente.
@@ -846,15 +857,49 @@ async function iniciar() {
   } else if ((await usuarios.contar()) === 0) {
     console.warn('[AUTH] Nenhum usuario e nenhuma variavel ADMIN_EMAIL/ADMIN_SENHA definida. Defina-as para criar o primeiro acesso.');
   }
+}
 
-  // cada requisicao roda num contexto proprio (usuario/modulo nao se misturam entre pessoas)
-  http.createServer((req, res) => views.contexto.run({ usuario: null, modulo: 'cotacao' }, () => handler(req, res))).listen(PORT, () => {
+// Tenta preparar o banco ate conseguir (a cada ESPERA_MS). Nunca derruba o processo:
+// enquanto o banco estiver indisponivel o site responde 503 com uma mensagem clara.
+async function prepararBancoComTentativas() {
+  const ESPERA_MS = Number(process.env.DB_RETRY_MS || 10000);
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      await prepararBanco();
+      bancoPronto = true;
+      console.log(`[DB] Banco pronto${tentativa > 1 ? ` (apos ${tentativa} tentativas)` : ''}.`);
+      return;
+    } catch (e) {
+      bancoPronto = false;
+      console.error(`[DB] Banco indisponivel (tentativa ${tentativa}): ${e.message}`);
+      if (/tenant or user not found|paused/i.test(e.message)) {
+        console.error('[DB] DICA: essa mensagem costuma indicar que o projeto do Supabase esta PAUSADO. Abra o painel do Supabase e clique em "Restore project".');
+      }
+      await new Promise((r) => setTimeout(r, ESPERA_MS));
+    }
+  }
+}
+
+// Rede de seguranca: um erro inesperado e registrado em vez de derrubar o servico inteiro.
+process.on('unhandledRejection', (e) => console.error('[ERRO] Promessa rejeitada sem tratamento:', e));
+process.on('uncaughtException', (e) => console.error('[ERRO] Excecao nao tratada:', e));
+
+function iniciar() {
+  // O servidor HTTP sobe PRIMEIRO (o Render exige a porta aberta) e o banco e preparado em segundo plano.
+  // Cada requisicao roda num contexto proprio (usuario/modulo nao se misturam entre pessoas).
+  http.createServer((req, res) => {
+    views.contexto.run({ usuario: null, modulo: 'cotacao' }, () => {
+      handler(req, res).catch((e) => {
+        console.error('[ERRO] Falha ao atender requisicao:', e);
+        if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' }); }
+        if (!res.writableEnded) res.end('Erro interno.');
+      });
+    });
+  }).listen(PORT, () => {
     console.log(`\nServidor rodando em ${BASE_URL}`);
     console.log(`Modo de e-mail: ${mailMode.toUpperCase()}${mailMode === 'mock' ? ' (simulado — links aparecem no log)' : ''}\n`);
   });
+  prepararBancoComTentativas();
 }
 
-iniciar().catch((e) => {
-  console.error('Falha ao iniciar:', e);
-  process.exit(1);
-});
+iniciar();

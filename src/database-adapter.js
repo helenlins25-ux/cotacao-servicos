@@ -20,6 +20,9 @@ if (usandoPostgres) {
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
   });
+  // O Supabase/pooler pode encerrar conexoes paradas. Sem este ouvinte, o Node trata isso como
+  // erro fatal e derruba o app ("Exited with status 1"). Aqui so registramos; o pool abre outra conexao.
+  pool.on('error', (e) => console.error('[DB] Conexao ociosa encerrada pelo servidor:', e.message));
   _query = async (sql, params = []) => pool.query(sql, params);
   const host = (process.env.DATABASE_URL.match(/@([^:/]+)/) || [])[1] || '?';
   console.log(`[DB] Usando PostgreSQL (Supabase) via host: ${host}`);
